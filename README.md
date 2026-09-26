@@ -10,7 +10,7 @@ The current application signs users in through Supabase, enforces client access 
 - An isolated **development** Supabase project with Auth and Postgres, or a local Supabase stack. The local stack needs a Docker-compatible container runtime. [Supabase local setup](https://supabase.com/docs/guides/local-development/cli/getting-started).
 - An email user in Supabase Auth for the first agency owner.
 
-This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. Docker, the Supabase CLI, and a live project connection were unavailable in this workspace, so the migration and persistence flow have not been exercised against Postgres yet.
+This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. The project-scoped Supabase CLI is installed. A live project connection is still pending, so the migration and persistence flow have not been exercised against Supabase yet.
 
 ## Development setup
 
@@ -49,6 +49,6 @@ The development database acceptance procedure is in [docs/ACCEPTANCE.md](docs/AC
 
 ## Deployment preparation
 
-Use a private Git repository and separate development and production Supabase projects. Set Vercel to Node 24, configure the two public-safe environment variables for each environment, and apply reviewed migrations to the matching database. Do not copy production client data into previews. A commercial agency deployment needs a Vercel plan permitting commercial use. Scheduled work and external integrations have not been implemented or enabled. [Vercel plan terms](https://vercel.com/docs/plans/hobby).
+This repository is public by owner choice. Keep credentials, client data, and private evidence out of it. Use separate development and production Supabase projects. Set Vercel to Node 24, configure the two public-safe environment variables for each environment, and apply reviewed migrations to the matching database. Do not copy production client data into previews. A commercial agency deployment needs a Vercel plan permitting commercial use. Scheduled work and external integrations have not been implemented or enabled. [Vercel plan terms](https://vercel.com/docs/plans/hobby).
 
 Database backups do not include private Storage objects; plan a separate file backup and restoration test when report/evidence storage is added. [Supabase backups](https://supabase.com/docs/guides/platform/backups). No production launch has occurred.
