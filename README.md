@@ -10,7 +10,7 @@ The current application signs users in through Supabase, enforces client access 
 - An isolated **development** Supabase project with Auth and Postgres, or a local Supabase stack. The local stack needs a Docker-compatible container runtime. [Supabase local setup](https://supabase.com/docs/guides/local-development/cli/getting-started).
 - An email user in Supabase Auth for the first agency owner.
 
-This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. The project-scoped Supabase CLI is installed. A live project connection is still pending, so the migration and persistence flow have not been exercised against Supabase yet.
+This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. The project-scoped Supabase CLI is installed. The foundation schema is applied to `rs-platform-dev`, but authenticated application flows and persistence have not yet been tested there.
 
 ## Development setup
 
