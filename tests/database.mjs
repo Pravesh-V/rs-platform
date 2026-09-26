@@ -12,7 +12,7 @@ await db.exec(`
     select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid
   $$;
 `);
-const sql = readFileSync(new URL('../supabase/migrations/202609260001_foundation.sql', import.meta.url), 'utf8');
+const sql = readFileSync(new URL('../supabase/migrations/20260926000100_foundation.sql', import.meta.url), 'utf8');
 await db.exec(sql);
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';

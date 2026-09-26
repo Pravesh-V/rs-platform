@@ -26,7 +26,7 @@ Updated 26 September 2026. Status terms: **implemented** = code exists; **tested
 | Monthly report snapshots, CSV/PDF, client viewer | Planned | Milestone 4. Current CSV is evidence export only, not approved reporting. |
 | Contributor fees, profitability, audit UI, retention/deletion, backups | Planned | Milestone 5, with foundational audit event table present. |
 | Direct Reddit publishing, Discord/calendar, analyst | Optional, planned | Later separate authorization and provider capability checks. |
-| GitHub and Supabase connection | In progress | The code is pushed to the supplied public GitHub repository on `main`. GitHub Actions CI and pinned Supabase CLI/config are ready. The development Supabase project is not linked yet. |
+| GitHub and Supabase connection | In progress | Code is pushed to the supplied public GitHub repository and CI passes. The development project's publishable key is in local ignored `.env.local`; the foundation SQL is applied, with 12 tables, 18 policies, RLS on all 12 tables and both RPCs verified live. No app Auth user or owner membership exists yet. CLI migration history still needs repair before future `db push`. |
 | Production deployment | Not started | Needs production accounts, reviewed migration, live tests, backup plan, and authorization. |
 
 Build gate before calling Milestone 1 complete: live development Supabase migration; first owner bootstrap; two isolated fictional clients; CSV import for two periods; persistence after new session; tested cross-client denial; verified authenticated CSV export; documented source permission. The lack of configured Supabase access currently prevents this gate.

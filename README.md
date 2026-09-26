@@ -16,7 +16,9 @@ This checkout was created with Node 25.9, which produced an engine warning; buil
 
 1. Install dependencies: `npm ci`.
 2. Copy `.env.example` to `.env.local`. Fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from the **development** project. This publishable key is intended for browser use. Do not place a Supabase secret or service-role key in a `NEXT_PUBLIC_` variable.
-3. Link the **development** project with the project-scoped CLI: `npx supabase login`, `npx supabase link --project-ref YOUR_DEV_PROJECT_REF`, `npx supabase db push --dry-run`, then `npx supabase db push` after reviewing the plan. This applies `supabase/migrations/202609260001_foundation.sql` with migration history. The CLI may ask for the development database password; enter it in the CLI prompt, not in chat or a tracked file. Do not apply schema changes in the remote SQL editor once migrations are in use. [Supabase migration workflow](https://supabase.com/docs/guides/deployment/database-migrations).
+3. For a fresh development project, link it with the project-scoped CLI: `npx supabase login`, `npx supabase link --project-ref YOUR_DEV_PROJECT_REF`, `npx supabase db push --dry-run`, then `npx supabase db push` after reviewing the plan. This applies `supabase/migrations/20260926000100_foundation.sql` with migration history. The CLI may ask for the development database password; enter it in the CLI prompt, not in chat or a tracked file. [Supabase migration workflow](https://supabase.com/docs/guides/deployment/database-migrations).
+
+   The supplied `rs-platform-dev` project already has this foundation SQL applied through the Dashboard. Its CLI migration history is not yet synchronized. Before running `db push` against that project, link the CLI and mark version `20260926000100` as applied with `npx supabase migration repair 20260926000100 --status applied`, then verify with `npx supabase migration list`. Do not re-run the foundation SQL there.
 4. In Supabase Auth, create an owner user. Get its UUID and run the following **in the development project’s SQL editor**, substituting that UUID:
 
    ```sql
