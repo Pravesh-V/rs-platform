@@ -14,6 +14,7 @@ await db.exec(`
 `);
 const sql = readFileSync(new URL('../supabase/migrations/20260926000100_foundation.sql', import.meta.url), 'utf8');
 await db.exec(sql);
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927000100_client_owner_read.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -37,6 +38,11 @@ await db.exec(`
 assert.deepEqual((await db.query('select name from public.clients order by name')).rows.map(row => row.name), ['A']);
 await db.exec(`set request.jwt.claim.sub = '${owner}'`);
 assert.deepEqual((await db.query('select name from public.clients order by name')).rows.map(row => row.name), ['A','B']);
+const newClient = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab';
+assert.equal((await db.query('insert into public.clients(id,organization_id,name) values ($1,$2,$3) returning id', [newClient,org,'New client'])).rows[0].id,newClient);
+assert.deepEqual((await db.query('select name from public.clients order by name')).rows.map(row => row.name), ['A','B','New client']);
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+await assert.rejects(db.query('insert into public.clients(organization_id,name) values ($1,$2) returning id', [org,'Denied client']));
 await db.exec(`set role anon`);
 await assert.rejects(db.query('select name from public.clients'));
 console.log('Basic role isolation and anonymous denial passed.');
