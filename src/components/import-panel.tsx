@@ -11,6 +11,7 @@ export function ImportPanel({ clientId, campaigns }: { clientId: string; campaig
   const [sourceNote, setSourceNote] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [message, setMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
   const [batchId, setBatchId] = useState("");
   const [key, setKey] = useState("");
   const [pending, startTransition] = useTransition();
@@ -24,14 +25,14 @@ export function ImportPanel({ clientId, campaigns }: { clientId: string; campaig
       const content = await file.text();
       setCsv(content);
       setPreview(previewCsv(content, campaignId));
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not read the file."); }
+    } catch (error) { setMessageIsError(true); setMessage(error instanceof Error ? error.message : "Could not read the file."); }
   }
 
   function chooseCampaign(value: string) {
     setCampaignId(value); setMessage(""); setPreview(null);
     if (!csv) return;
     try { setPreview(previewCsv(csv, value)); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "Could not preview the file."); }
+    catch (error) { setMessageIsError(true); setMessage(error instanceof Error ? error.message : "Could not preview the file."); }
   }
 
   function save() {
@@ -39,8 +40,8 @@ export function ImportPanel({ clientId, campaigns }: { clientId: string; campaig
     setMessage(""); setBatchId("");
     startTransition(async () => {
       const result = await commitImport(clientId,csv,fileName,sourceNote,key,campaignId);
-      if (result.ok) { setBatchId(result.batchId); setMessage(`${result.count} rows committed. Repeating this submission will reuse the same batch.`); }
-      else setMessage(result.message);
+      if (result.ok) { setBatchId(result.batchId); setMessageIsError(false); setMessage(`${result.count} rows committed. Repeating this submission will reuse the same batch.`); }
+      else { setMessageIsError(true); setMessage(result.message); }
     });
   }
 
@@ -51,6 +52,6 @@ export function ImportPanel({ clientId, campaigns }: { clientId: string; campaig
       {preview.rows.length > 0 && <div className="table-scroll"><table><thead><tr><th>Item</th><th>Community</th><th>Observed</th><th>Views</th><th>Affiliation</th></tr></thead><tbody>{preview.rows.slice(0,10).map((row,index) => <tr key={`${row.external_id}-${index}`}><td>{row.external_id}</td><td>r/{row.subreddit}</td><td>{row.observed_at}</td><td>{row.views ?? "Unknown"}</td><td>{row.affiliation}</td></tr>)}</tbody></table></div>}
     </div>}
     <div className="form-actions"><button className="button primary" type="button" onClick={save} disabled={pending || !preview?.rows.length || Boolean(preview.errors.length) || !sourceNote.trim()}>{pending ? "Saving…" : batchId ? "Submit again" : "Commit valid evidence"}</button></div>
-    {message && <div className={`notice ${batchId ? "success" : "error"}`} role="status">{message}</div>}
+    {message && <div className={`notice ${messageIsError ? "error" : "success"}`} role="status">{message}</div>}
   </section>;
 }
