@@ -1,9 +1,11 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireClient, requireUser } from "@/lib/auth";
+import { clientCreateError, insertWithStableId } from "@/lib/idempotent-insert";
 import { parseRedditUrl, parseTimestamp } from "@/lib/reddit";
 
 const uuid = z.string().uuid();
@@ -25,8 +27,13 @@ export async function createClient(form: FormData) {
   const { db, userId } = await requireUser();
   const { data: member } = await db.from("memberships").select("role").eq("organization_id", input.data.organizationId).eq("user_id", userId).maybeSingle();
   if (member?.role !== "owner") redirect("/clients?error=Owner%20access%20required");
-  const { data, error } = await db.from("clients").insert({ organization_id: input.data.organizationId, name: input.data.name, website: input.data.website || null, timezone: input.data.timezone }).select("id").single();
-  if (error || !data) redirect(`/clients?error=${queryError(error?.message ?? "Could not create client")}`);
+  const id = randomUUID();
+  const { data, error } = await insertWithStableId(
+    id,
+    async () => db.from("clients").insert({ id, organization_id: input.data.organizationId, name: input.data.name, website: input.data.website || null, timezone: input.data.timezone }).select("id").single(),
+    async () => db.from("clients").select("id").eq("id", id).eq("organization_id", input.data.organizationId).maybeSingle(),
+  );
+  if (error || !data) redirect(`/clients?error=${queryError(clientCreateError(error))}`);
   redirect(`/clients/${data.id}`);
 }
 
