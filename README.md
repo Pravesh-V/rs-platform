@@ -10,15 +10,15 @@ The current application signs users in through Supabase, enforces client access 
 - An isolated **development** Supabase project with Auth and Postgres, or a local Supabase stack. The local stack needs a Docker-compatible container runtime. [Supabase local setup](https://supabase.com/docs/guides/local-development/cli/getting-started).
 - An email user in Supabase Auth for the first agency owner.
 
-This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. The project-scoped Supabase CLI is installed. The foundation schema is applied to `rs-platform-dev`, but authenticated application flows and persistence have not yet been tested there.
+This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. The project-scoped Supabase CLI is installed. The foundation schema and owner client-read policy are applied to `rs-platform-dev`. Owner login and one client creation have been verified there; campaign/import and cross-account isolation checks remain.
 
 ## Development setup
 
 1. Install dependencies: `npm ci`.
 2. Copy `.env.example` to `.env.local`. Fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from the **development** project. This publishable key is intended for browser use. Do not place a Supabase secret or service-role key in a `NEXT_PUBLIC_` variable.
-3. For a fresh development project, link it with the project-scoped CLI: `npx supabase login`, `npx supabase link --project-ref YOUR_DEV_PROJECT_REF`, `npx supabase db push --dry-run`, then `npx supabase db push` after reviewing the plan. This applies `supabase/migrations/20260926000100_foundation.sql` with migration history. The CLI may ask for the development database password; enter it in the CLI prompt, not in chat or a tracked file. [Supabase migration workflow](https://supabase.com/docs/guides/deployment/database-migrations).
+3. For a fresh development project, link it with the project-scoped CLI: `npx supabase login`, `npx supabase link --project-ref YOUR_DEV_PROJECT_REF`, `npx supabase db push --dry-run`, then `npx supabase db push` after reviewing the plan. This applies the migrations in `supabase/migrations/` with migration history. The CLI may ask for the development database password; enter it in the CLI prompt, not in chat or a tracked file. [Supabase migration workflow](https://supabase.com/docs/guides/deployment/database-migrations).
 
-   The supplied `rs-platform-dev` project already has this foundation SQL applied through the Dashboard. Its CLI migration history is not yet synchronized. Before running `db push` against that project, link the CLI and mark version `20260926000100` as applied with `npx supabase migration repair 20260926000100 --status applied`, then verify with `npx supabase migration list`. Do not re-run the foundation SQL there.
+   The supplied `rs-platform-dev` project already has both current migrations applied through the Dashboard. Its CLI migration history is not yet synchronized. Before running `db push` against that project, link the CLI and mark versions `20260926000100` and `20260927000100` as applied with `npx supabase migration repair VERSION --status applied` for each version, then verify with `npx supabase migration list`. Do not re-run either migration there.
 4. In Supabase Auth, create an owner user. Get its UUID and run the following **in the development project’s SQL editor**, substituting that UUID:
 
    ```sql
@@ -31,7 +31,7 @@ This checkout was created with Node 25.9, which produced an engine warning; buil
    ```
 
 5. Start the app: `npm run dev`. Open `http://localhost:3000`, sign in, and create two **fictional clients in the development project**.
-6. Add a campaign for each client. Import a permitted CSV with observations in two periods, or record a real published contribution. The import form links to a blank CSV template and can assign rows with blank `campaign_id` cells to a selected campaign. Verify that unknown counters display as unknown and that a repeated import uses its existing batch ID.
+6. Add a campaign for each client. Import a permitted CSV with observations in two periods, or record a real published contribution. For development-only acceptance, `tests/fixtures/synthetic-evidence.csv` contains explicitly synthetic observations; never present them as live Reddit data. The import form links to a blank CSV template and can assign rows with blank `campaign_id` cells to a selected campaign. Verify that unknown counters display as unknown and that a repeated import uses its existing batch ID.
 
 Use a custom SMTP provider before inviting real users: Supabase’s default SMTP service is for exploration and sends only to authorized team addresses with a low rate limit. [Supabase SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
 

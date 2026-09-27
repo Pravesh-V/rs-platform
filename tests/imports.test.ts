@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { parse } from "csv-parse/sync";
 import { previewCsv } from "../src/lib/imports";
 import { parseRedditUrl, parseTimestamp } from "../src/lib/reddit";
 import { evidenceCsv, safeCell } from "../src/lib/csv";
 
 describe("evidence input and output", () => {
+  it("accepts the labelled development fixture with two periods and unknown views", () => {
+    const csv = readFileSync(new URL("./fixtures/synthetic-evidence.csv", import.meta.url), "utf8");
+    const preview = previewCsv(csv);
+    expect(preview.errors).toEqual([]);
+    expect(preview.rows.map((row) => row.views)).toEqual([100, 140, null]);
+  });
+
   it("extracts post and comment identities without treating score as views", () => {
     expect(parseRedditUrl("https://reddit.com/r/Tools/comments/abc123/example/")).toMatchObject({ externalId:"t3_abc123",subreddit:"tools",itemType:"post" });
     expect(parseRedditUrl("https://www.reddit.com/r/Tools/comments/abc123/example/def456/")).toMatchObject({ externalId:"t1_def456",subreddit:"tools",itemType:"comment" });

@@ -1,0 +1,4 @@
+url,title,text,published_at,observed_at,views,score,replies,shares,affiliation,campaign_id
+https://www.reddit.com/r/test/comments/zzrsdemo1/,Synthetic test post A (not live),,2026-09-01T09:00:00Z,2026-09-03T10:00:00Z,100,5,2,,independent,
+https://www.reddit.com/r/test/comments/zzrsdemo1/,Synthetic test post A (not live),,2026-09-01T09:00:00Z,2026-09-17T10:00:00Z,140,8,3,,independent,
+https://www.reddit.com/r/test/comments/zzrsdemo2/,Synthetic unknown-views test (not live),,2026-09-15T09:00:00Z,2026-09-18T10:00:00Z,,-2,0,,independent,
