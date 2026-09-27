@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { DateTime } from "luxon";
+import { retryIdempotentRequest } from "./idempotent-insert";
 import type { Observation } from "./metrics";
 
 export type RedditItem = {
@@ -19,7 +20,7 @@ export function periodBounds(start: string, end: string, zone: string): [string,
 async function pages<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
   const output: T[] = [];
   for (let from = 0; from < 10000; from += 500) {
-    const result = await fetchPage(from, from + 499);
+    const result = await retryIdempotentRequest(async () => fetchPage(from, from + 499));
     if (result.error) throw new Error(result.error.message);
     const part = result.data ?? [];
     output.push(...part);

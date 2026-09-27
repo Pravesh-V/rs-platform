@@ -10,7 +10,7 @@ The current application signs users in through Supabase, enforces client access 
 - An isolated **development** Supabase project with Auth and Postgres, or a local Supabase stack. The local stack needs a Docker-compatible container runtime. [Supabase local setup](https://supabase.com/docs/guides/local-development/cli/getting-started).
 - An email user in Supabase Auth for the first agency owner.
 
-This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. The project-scoped Supabase CLI is installed. All four current migrations are applied to `rs-platform-dev`. Owner login, client creation, comparison display, authenticated CSV export, and the fact-review RPC have been verified there. Two development clients, comparison campaigns, and a labelled synthetic import are present; browser import, session persistence, and a separate Auth-user isolation test remain.
+This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. The project-scoped Supabase CLI is installed. All four current migrations are applied to `rs-platform-dev`. Owner login, client creation, comparison display, authenticated CSV export, the fact-review RPC, and separate Auth-user API isolation have been verified there. Two development clients, comparison campaigns, and a labelled synthetic import are present; browser import, session persistence, and protected-URL browser checks remain.
 
 ## Development setup
 
