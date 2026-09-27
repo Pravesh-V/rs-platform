@@ -4,7 +4,7 @@ import { Shell } from "@/components/shell";
 import { requireClient } from "@/lib/auth";
 import { evidence, periodBounds } from "@/lib/data";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
-import { matchedViewChange, summarize } from "@/lib/metrics";
+import { contributionGroups, matchedViewChange, summarize } from "@/lib/metrics";
 
 function number(value: number | null) { return value === null ? "Unknown" : new Intl.NumberFormat("en").format(value); }
 function timestamp(value: string | null) { return value ? new Date(value).toLocaleString("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }) + " UTC" : "Unknown"; }
@@ -13,10 +13,10 @@ export default async function ClientOverview({ params, searchParams }: { params:
   const { clientId } = await params;
   const { db, client, role } = await requireClient(clientId);
   const filters = await searchParams;
-  const [{ data: facts, error: factsError }, { data: campaigns, error: campaignsError }, { data: contributions, error: contributionError }] = await Promise.all([
+  const [{ data: facts, error: factsError }, { data: campaigns, error: campaignsError }, { data: contributions, count: contributionCount, error: contributionError }] = await Promise.all([
     retryIdempotentRequest(async () => db.from("client_facts").select("id,kind,statement,source_url,review_status,verified_at,review_note,reviewed_at").eq("client_id",clientId).order("created_at",{ ascending:false }).limit(100)),
     retryIdempotentRequest(async () => db.from("campaigns").select("id,name,goal,baseline_start,baseline_end,comparison_start,comparison_end").eq("client_id",clientId).order("created_at",{ ascending:false })),
-    retryIdempotentRequest(async () => db.from("contributions").select("id,item_id,format,published_at,campaign_id,verification_status").eq("client_id",clientId).order("published_at",{ ascending:false }).limit(50)),
+    retryIdempotentRequest(async () => db.from("contributions").select("id,item_id,format,published_at,campaign_id,verification_status",{count:"exact"}).eq("client_id",clientId).order("published_at",{ ascending:false }).limit(1000)),
   ]);
   let dataset: Awaited<ReturnType<typeof evidence>> | null = null;
   let dataError: string | null = null;
@@ -31,16 +31,22 @@ export default async function ClientOverview({ params, searchParams }: { params:
   let baseline = null;
   let comparison = null;
   let matched = null;
+  let comparisonBounds: [string,string] | null = null;
   let boundsError: string | null = null;
   if (campaign && dataset && !dataset.truncated) {
     try {
       const before = periodBounds(campaign.baseline_start,campaign.baseline_end,client.timezone);
       const after = periodBounds(campaign.comparison_start,campaign.comparison_end,client.timezone);
+      comparisonBounds = after;
       baseline = summarize(snapshots,...before);
       comparison = summarize(snapshots,...after);
       matched = matchedViewChange(snapshots,before,after);
     } catch (error) { boundsError = error instanceof Error ? error.message : "Invalid date range."; }
   }
+  const contributionCapped = contributionCount === null ? (contributions?.length ?? 0)>=1000 : contributionCount>(contributions?.length ?? 0);
+  const campaignContributions = contributions?.filter((entry) => entry.campaign_id===campaign?.id) ?? [];
+  const groupedContributions = campaign && dataset && !dataset.truncated && !contributionCapped && comparisonBounds
+    ? contributionGroups(campaignContributions,campaignItems,snapshots,comparisonBounds) : null;
   const canEdit = ["owner","manager","researcher"].includes(role);
   const canReview = ["owner","manager"].includes(role);
   const canContribute = canEdit || role === "writer";
@@ -49,6 +55,7 @@ export default async function ClientOverview({ params, searchParams }: { params:
     {filters.error && <div className="notice error" role="alert">{filters.error}</div>}
     {(dataError || factsError || campaignsError || contributionError || boundsError) && <div className="notice error" role="alert">Some records could not load. {dataError || factsError?.message || campaignsError?.message || contributionError?.message || boundsError}</div>}
     {dataset?.truncated && <div className="notice warning">This client has more than 10,000 items or snapshots. Calculations are paused until pagination is expanded; no partial total is shown.</div>}
+    {contributionCapped && <div className="notice warning">This client has more than 1,000 recorded contributions. Community and format totals are paused until pagination is expanded.</div>}
     <div className="summary-strip"><div><span className="eyebrow">DATA FRESHNESS</span><strong>{timestamp(latestSync)}</strong></div><div><span className="eyebrow">COVERAGE</span><strong>{dataset?.items.length ?? 0} items · {dataset?.snapshots.length ?? 0} observations</strong></div><div><span className="eyebrow">COLLECTION</span><strong>Manual / authorized imports</strong></div></div>
 
     <section className="panel" id="campaigns"><div className="panel-heading"><div><h2>Campaign comparison</h2><p className="muted small">Periods use {client.timezone}. Views are latest recorded lifetime counters, never summed snapshots.</p></div><Link className="button secondary" href={`/clients/${clientId}/campaigns`}>Windows &amp; events</Link></div>
@@ -74,9 +81,16 @@ export default async function ClientOverview({ params, searchParams }: { params:
       </div>)}</div> : factsError ? <div className="empty compact">Company facts unavailable.</div> : <div className="empty compact">No company facts recorded.</div>}
       {canEdit && <details className="add-detail"><summary>Add company fact</summary><form action={createFact} className="stack"><input type="hidden" name="clientId" value={clientId} /><label>Type<select name="kind">{["product","alias","positioning","customer","differentiator","pricing","prohibited_claim","tone","objective","other"].map((kind) => <option value={kind} key={kind}>{kind.replaceAll("_"," ")}</option>)}</select></label><label>Statement<textarea name="statement" required maxLength={5000} rows={3} /></label><label>Source URL<input name="sourceUrl" type="url" placeholder="https://..." /></label><label>Verified on<input name="verifiedAt" type="date" /></label><button className="button primary">Save fact for review</button></form></details>}
     </section><section className="panel" id="contributions"><div className="panel-heading"><h2>Recorded contributions</h2><span className="muted small">User-reported publication URLs</span></div>
-      {contributions?.length ? <div className="record-list">{contributions.map((contribution) => { const item=dataset?.items.find((entry) => entry.id===contribution.item_id); return <div key={contribution.id} className="record"><div><span className="tag">{contribution.format}</span> <strong>{item ? `r/${item.subreddit}` : "Reddit item"}</strong></div><div className="muted small">Reported published {timestamp(contribution.published_at)} · {contribution.verification_status.replaceAll("_"," ")}{item && <> · <a href={item.canonical_url} target="_blank" rel="noreferrer">Open on Reddit ↗</a></>}</div></div>; })}</div> : contributionError ? <div className="empty compact">Contributions unavailable.</div> : <div className="empty compact">No publications recorded. Approval alone never creates a contribution.</div>}
+      {contributions?.length ? <div className="record-list">{contributions.slice(0,50).map((contribution) => { const item=dataset?.items.find((entry) => entry.id===contribution.item_id); return <div key={contribution.id} className="record"><div><span className="tag">{contribution.format}</span> <strong>{item ? `r/${item.subreddit}` : "Reddit item"}</strong></div><div className="muted small">Reported published {timestamp(contribution.published_at)} · {contribution.verification_status.replaceAll("_"," ")}{item && <> · <a href={item.canonical_url} target="_blank" rel="noreferrer">Open on Reddit ↗</a></>}</div></div>; })}</div> : contributionError ? <div className="empty compact">Contributions unavailable.</div> : <div className="empty compact">No publications recorded. Approval alone never creates a contribution.</div>}
       {canContribute && <details className="add-detail"><summary>Record a published post or comment</summary><form action={recordContribution} className="stack"><input type="hidden" name="clientId" value={clientId} /><label>Actual Reddit URL<input name="url" type="url" required placeholder="https://www.reddit.com/r/.../comments/..." /></label><label>Title or description<input name="title" maxLength={500} /></label><label>Campaign<select name="campaignId"><option value="">No campaign</option>{campaigns?.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label><label>Format<select name="format"><option value="post">Post</option><option value="comment">Comment</option><option value="faq">FAQ</option><option value="tutorial">Tutorial</option><option value="comparison">Comparison</option><option value="other">Other</option></select></label><label>Publication time<input name="publishedAt" required placeholder="2026-09-26T10:30:00+05:30" /><span className="hint">Include the timezone offset.</span></label><button className="button primary">Record publication</button></form></details>}
     </section></div>
+
+    {campaign && <section className="panel"><div className="panel-heading"><div><h2>Community &amp; format observations</h2><p className="muted small">Recorded contributions linked to {campaign.name}; latest known lifetime views observed in its comparison window.</p></div></div>
+      {groupedContributions?.length ? <div className="table-scroll"><table><thead><tr><th>Community</th><th>Format</th><th>Contributions</th><th>Observed items</th><th>Known views</th><th>Latest lifetime views</th></tr></thead><tbody>{groupedContributions.map((group) => <tr key={`${group.subreddit}:${group.format}`}><td>r/{group.subreddit}</td><td>{group.format}</td><td>{group.contributions}</td><td>{group.observedItems}/{group.contributions}</td><td>{group.measuredItems}/{group.contributions}</td><td>{number(group.latestLifetimeViews)}</td></tr>)}</tbody></table></div>
+        : contributionCapped || dataset?.truncated || dataError || boundsError || contributionError ? <div className="empty compact">Group totals are unavailable until the evidence is complete.</div>
+          : <div className="empty compact">No recorded contributions are linked to this campaign.</div>}
+      <p className="coverage-note">These are recorded contributions and observed counters, not unique reach or conversion attribution. An unobserved item is not treated as zero views. Community and format groups may differ in age, audience and source coverage, so their values do not establish which approach caused an outcome.</p>
+    </section>}
 
     <section className="panel" id="evidence"><div className="panel-heading"><div><h2>Evidence observations</h2><p className="muted small">{campaign ? `Campaign: ${campaign.name}` : "All client items"} · {snapshots.length} observations · showing the newest 100</p></div><Link className="button secondary" href={`/clients/${clientId}/export${campaign ? `?campaign=${campaign.id}` : ""}`}>Export CSV</Link></div>
       {sortedSnapshots.length ? <div className="table-scroll"><table><thead><tr><th>Observed</th><th>Reddit item</th><th>Affiliation</th><th>Views, lifetime</th><th>Score</th><th>Replies</th><th>Source</th></tr></thead><tbody>{sortedSnapshots.slice(0,100).map((observation) => { const item=itemMap.get(observation.item_id); return <tr key={observation.id}><td>{timestamp(observation.observed_at)}</td><td>{item ? <a href={item.canonical_url} target="_blank" rel="noreferrer">r/{item.subreddit} · {item.external_id} ↗</a> : "Unknown item"}</td><td>{item?.affiliation ?? "Unknown"}</td><td>{number(observation.views)}</td><td>{number(observation.score)}</td><td>{number(observation.replies)}</td><td>{observation.source_type.replaceAll("_"," ")}</td></tr>; })}</tbody></table></div> : dataError ? <div className="empty compact">Evidence unavailable.</div> : <div className="empty"><h3>No evidence observations</h3><p>Import authorized records to populate comparisons. Unknown values will remain unknown.</p><Link href={`/clients/${clientId}/imports`} className="button secondary">Go to imports</Link></div>}

@@ -35,6 +35,34 @@ export function matchedViewChange(observations: Observation[], baseline: [string
   return matchedItems ? { matchedItems, beforeTotal, afterTotal, change: afterTotal - beforeTotal } : null;
 }
 
+export function contributionGroups(
+  contributions: { item_id: string; format: string }[],
+  items: { id: string; subreddit: string }[],
+  observations: Observation[],
+  period: [string,string],
+) {
+  const itemMap = new Map(items.map((item) => [item.id,item]));
+  const latest = latestByItem(observations,...period);
+  const groups = new Map<string,{subreddit:string;format:string;contributions:number;observedItems:number;measuredItems:number;latestLifetimeViews:number|null}>();
+  for (const contribution of contributions) {
+    const item = itemMap.get(contribution.item_id);
+    if (!item) continue;
+    const key = JSON.stringify([item.subreddit,contribution.format]);
+    const group = groups.get(key) ?? {subreddit:item.subreddit,format:contribution.format,contributions:0,observedItems:0,measuredItems:0,latestLifetimeViews:null};
+    group.contributions++;
+    const observation = latest.get(contribution.item_id);
+    if (observation) {
+      group.observedItems++;
+      if (observation.views!==null) {
+        group.measuredItems++;
+        group.latestLifetimeViews=(group.latestLifetimeViews ?? 0)+observation.views;
+      }
+    }
+    groups.set(key,group);
+  }
+  return [...groups.values()].sort((a,b) => a.subreddit.localeCompare(b.subreddit) || a.format.localeCompare(b.format));
+}
+
 export function rate(numerator: number, denominator: number) {
   if (denominator <= 0) return null;
   return numerator / denominator;

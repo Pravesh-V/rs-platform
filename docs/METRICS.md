@@ -11,6 +11,7 @@ Definition version 0.2, implemented foundation and manual-review subset. These a
 - The matched change describes counter growth between the two observation times. It is not a count of unique viewers, and it is not necessarily activity confined to the calendar month.
 - Score is Reddit score, not exact upvotes. No score-derived views are calculated.
 - The evidence CSV exports raw selected observations. Dashboard and export use the same selected campaign.
+- Community-and-format rows group recorded contributions linked to the selected campaign. Each contribution is counted once. For each contribution item, only the latest observation inside the selected comparison window contributes a known lifetime-view value; a missing observation or unknown views remain visible through separate denominators. Groups are descriptive and are not a randomized comparison or attribution result.
 
 ## Manual AI visibility
 
