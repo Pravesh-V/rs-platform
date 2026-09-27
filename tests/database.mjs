@@ -20,6 +20,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927000200_fact_r
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000300_rpc_anon_privileges.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000400_manual_research.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000500_content_review.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927000600_campaign_history.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -105,6 +106,23 @@ await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
 await assert.rejects(db.query('insert into public.metric_snapshots(client_id,item_id,observed_at,source_type) values ($1,$2,$3,$4)',[a,a,'2026-09-02T00:00:00Z','manual']));
 const campaign = '99999999-9999-4999-8999-999999999999';
 await db.query('insert into public.campaigns(id,client_id,name,baseline_start,baseline_end,comparison_start,comparison_end) values ($1,$2,$3,$4,$5,$6,$7)',[campaign,a,'Example campaign','2026-09-01','2026-09-03','2026-10-01','2026-10-03']);
+assert.deepEqual((await db.query('select version,origin,actor_id from public.campaign_versions where campaign_id=$1',[campaign])).rows[0],{version:1,origin:'created',actor_id:researcher});
+const reviseCampaignSql = 'select public.revise_campaign($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) as version';
+const campaignRevisionArgs = [a,campaign,1,'Example campaign','Qualified signups','2026-09-01','2026-09-04','2026-10-01','2026-10-04','Extended both windows with source coverage'];
+assert.equal((await db.query(reviseCampaignSql,campaignRevisionArgs)).rows[0].version,2);
+assert.equal((await db.query(reviseCampaignSql,campaignRevisionArgs)).rows[0].version,2);
+await assert.rejects(db.query(reviseCampaignSql,[...campaignRevisionArgs.slice(0,3),'Changed title',...campaignRevisionArgs.slice(4)]));
+await assert.rejects(db.query(reviseCampaignSql,[b,campaign,...campaignRevisionArgs.slice(2)]));
+assert.equal((await db.query('select count(*)::int as count from public.campaign_versions where campaign_id=$1',[campaign])).rows[0].count,2);
+await assert.rejects(db.query('update public.campaigns set name=$1 where id=$2',['Bypass history',campaign]));
+const campaignEventId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const campaignEventSql = 'select public.record_campaign_event($1,$2,$3,$4,$5::timestamptz,$6,$7) as id';
+const campaignEventArgs = [campaignEventId,a,campaign,'pricing_change','2026-09-20T12:00:00Z','Synthetic price change','Synthetic editorial test'];
+assert.equal((await db.query(campaignEventSql,campaignEventArgs)).rows[0].id,campaignEventId);
+assert.equal((await db.query(campaignEventSql,campaignEventArgs)).rows[0].id,campaignEventId);
+await assert.rejects(db.query(campaignEventSql,[campaignEventId,a,campaign,'pricing_change','2026-09-20T12:00:00Z','Different description','Synthetic editorial test']));
+await assert.rejects(db.query(campaignEventSql,['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeef',b,campaign,'launch','2026-09-20T12:00:00Z','Denied','Synthetic editorial test']));
+assert.equal((await db.query('select count(*)::int as count from public.campaign_events where campaign_id=$1',[campaign])).rows[0].count,1);
 const row = { external_id: 't3_abc123', canonical_url: 'https://www.reddit.com/r/tools/comments/abc123/', subreddit: 'tools', item_type: 'post', published_at: '2026-09-01T00:00:00Z', affiliation: 'independent', campaign_id: campaign, title: 'Example', body: null, observed_at: '2026-09-02T00:00:00Z', views: 10, score: 3, replies: 0, shares: null };
 const key = '66666666-6666-4666-8666-666666666666';
 const importSql = 'select public.commit_reddit_import($1,$2,$3,$4,$5::jsonb) as id';
@@ -163,7 +181,7 @@ for (const rpcSignature of ['public.create_content_draft(uuid,uuid,uuid,uuid,tex
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',rpcSignature,'EXECUTE'])).rows[0].allowed,false);
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['authenticated',rpcSignature,'EXECUTE'])).rows[0].allowed,true);
 }
-for (const table of ['content_drafts','content_draft_versions','content_review_events']) {
+for (const table of ['content_drafts','content_draft_versions','content_review_events','campaign_versions','campaign_events']) {
   assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['authenticated',`public.${table}`,'INSERT'])).rows[0].allowed,false);
   assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['anon',`public.${table}`,'SELECT'])).rows[0].allowed,false);
 }
@@ -173,7 +191,12 @@ await db.query(createDraftSql,[bDraftId,b,null,null,'B private draft','Do not ex
 await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
 assert.equal((await db.query('select count(*)::int as count from public.content_drafts where client_id=$1',[b])).rows[0].count,0);
 assert.equal((await db.query('select count(*)::int as count from public.content_draft_versions where client_id=$1',[b])).rows[0].count,0);
+assert.equal((await db.query('select count(*)::int as count from public.campaign_versions where client_id=$1',[b])).rows[0].count,0);
 await assert.rejects(db.query(reviewDraftSql,[b,bDraftId,1,'submit',null]));
+for (const rpcSignature of ['public.revise_campaign(uuid,uuid,integer,text,text,date,date,date,date,text)','public.record_campaign_event(uuid,uuid,uuid,text,timestamp with time zone,text,text)']) {
+  assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',rpcSignature,'EXECUTE'])).rows[0].allowed,false);
+  assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['authenticated',rpcSignature,'EXECUTE'])).rows[0].allowed,true);
+}
 await db.exec(`set request.jwt.claim.sub = '${owner}'`);
 console.log('RPC access, two-period evidence, idempotency and conflict checks passed.');
 const saved = await db.dumpDataDir();
