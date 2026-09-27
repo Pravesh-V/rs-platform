@@ -3,6 +3,7 @@ import { addSearchKeyword, addSearchObservation, createSearchSet, freezeSearchSe
 import { Shell } from "@/components/shell";
 import { requireClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
+import { summarizeSearchCohorts, type SearchObservation } from "@/lib/search-metrics";
 
 export default async function SearchVisibilityPage({ params, searchParams }: {
   params: Promise<{ clientId: string }>;
@@ -11,22 +12,25 @@ export default async function SearchVisibilityPage({ params, searchParams }: {
   const { clientId } = await params;
   const filters = await searchParams;
   const { db, client, role } = await requireClient(clientId);
-  const { data: sets, error: setsError } = await retryIdempotentRequest(async () => db.from("search_sets")
-    .select("id,name,version,engine,region,language,device,status,created_at").eq("client_id",clientId)
-    .order("created_at",{ascending:false}).limit(101));
+  const { data: sets, count: setCount, error: setsError } = await retryIdempotentRequest(async () => db.from("search_sets")
+    .select("id,name,version,engine,region,language,device,status,created_at",{count:"exact"}).eq("client_id",clientId)
+    .order("created_at",{ascending:false}).limit(100));
   const selectedSet = sets?.find((set) => set.id===filters.set) ?? sets?.[0];
-  const [{ data: keywords, error: keywordsError }, { data: observations, error: observationsError }] = selectedSet ? await Promise.all([
+  const [{ data: keywords, error: keywordsError }, { data: observations, count: observationCount, error: observationsError }] = selectedSet ? await Promise.all([
     retryIdempotentRequest(async () => db.from("search_keywords").select("id,ordinal,phrase")
       .eq("client_id",clientId).eq("set_id",selectedSet.id).order("ordinal").limit(101)),
     retryIdempotentRequest(async () => db.from("search_observations")
-      .select("id,keyword_id,wave_label,observed_at,source_provider,sampling_method,result_type,outcome,rank,ranking_url,result_title,detail,source_note")
-      .eq("client_id",clientId).eq("set_id",selectedSet.id).order("observed_at",{ascending:false}).limit(501)),
-  ]) : [{data:[],error:null},{data:[],error:null}];
+      .select("id,keyword_id,wave_label,observed_at,source_provider,sampling_method,result_type,outcome,rank,ranking_url,result_title,detail,source_note",{count:"exact"})
+      .eq("client_id",clientId).eq("set_id",selectedSet.id).order("observed_at",{ascending:false}).limit(500)),
+  ]) : [{data:[],error:null},{data:[],count:0,error:null}];
   const selected = observations?.find((row) => row.id===filters.observation) ?? observations?.[0];
   const phraseFor = (id: string) => keywords?.find((keyword) => keyword.id===id)?.phrase ?? "Keyword unavailable";
-  const capped = (sets?.length ?? 0)>100 || (keywords?.length ?? 0)>100 || (observations?.length ?? 0)>500;
+  const capped = (setCount !== null && setCount > (sets?.length ?? 0)) || (keywords?.length ?? 0)>100
+    || (observationCount !== null && observationCount > (observations?.length ?? 0));
   const canEdit = ["owner","manager","researcher"].includes(role);
   const loadError = setsError || keywordsError || observationsError;
+  const cohorts = !loadError && !capped && keywords?.length && observations?.length
+    ? summarizeSearchCohorts(keywords.map((row) => row.id),observations as SearchObservation[]) : [];
 
   return <Shell clientId={clientId} clientName={client.name}>
     <div className="page-heading"><div><div className="eyebrow">SEARCH VISIBILITY · MANUAL EVIDENCE</div><h1>Keyword observations</h1><p className="muted">Track comparable search settings and observed result URLs for {client.name}.</p></div><Link className="button secondary" href={`/clients/${clientId}`}>Back to overview</Link></div>
@@ -52,6 +56,12 @@ export default async function SearchVisibilityPage({ params, searchParams }: {
         </form></details>{Boolean(keywords?.length) && <form action={freezeSearchSet} className="add-detail"><input type="hidden" name="clientId" value={clientId} /><input type="hidden" name="setId" value={selectedSet.id} /><button className="button primary">Freeze this set</button><p className="muted small">Frozen phrases and settings cannot be edited.</p></form>}</>}
       </>}
     </section></div>
+
+    {selectedSet?.status==="frozen" && <section className="panel"><div className="panel-heading"><div><h2>Observed keyword coverage</h2><p className="muted small">Each row keeps one frozen set, wave, provider, collection method and result type. The latest recorded outcome per keyword is used.</p></div></div>
+      {cohorts.length ? <div className="table-scroll"><table><thead><tr><th>Wave</th><th>Result type</th><th>Source and method</th><th>Attempted</th><th>Present</th><th>Not found</th><th>Errors</th><th>Missing</th><th>Presence</th></tr></thead><tbody>{cohorts.map((cohort) => <tr key={JSON.stringify([cohort.waveLabel,cohort.sourceProvider,cohort.samplingMethod,cohort.resultType])}><td>{cohort.waveLabel}</td><td>{cohort.resultType.replaceAll("_"," ")}</td><td>{cohort.sourceProvider} · {cohort.samplingMethod.replaceAll("_"," ")}</td><td>{cohort.attempted}/{cohort.planned}</td><td>{cohort.present}</td><td>{cohort.notFound}</td><td>{cohort.errors}</td><td>{cohort.missing}</td><td>{cohort.presenceRate===null ? "Withheld" : `${(cohort.presenceRate*100).toFixed(1)}%`}</td></tr>)}</tbody></table></div>
+        : <div className="empty compact">{capped ? "Coverage withheld until the full observation set can be loaded." : "Record observations to see coverage by cohort."}</div>}
+      <p className="coverage-note">Presence is shown only when every keyword has a valid present or explicit not-found outcome. A missing record is not a not-found result. This is a sampled search observation, not audience exposure or a cross-provider trend.</p>
+    </section>}
 
     {selectedSet?.status==="frozen" && <>{canEdit && <section className="panel"><div className="panel-heading"><div><h2>Add one observed result</h2><p className="muted small">Record one result URL or an explicit not-found/error outcome for a keyword and wave.</p></div></div>
       <details className="add-detail"><summary>New observation</summary><form action={addSearchObservation} className="form-grid"><input type="hidden" name="clientId" value={clientId} /><input type="hidden" name="setId" value={selectedSet.id} />
