@@ -19,5 +19,5 @@ export async function requireClient(clientId: string) {
   const { data: membership, error: membershipError } = await retryIdempotentRequest(async () => db.from("memberships").select("role").eq("organization_id", client.organization_id).eq("user_id", userId).maybeSingle());
   const { data: access, error: accessError } = await retryIdempotentRequest(async () => db.from("client_access").select("role").eq("client_id", clientId).eq("user_id", userId).maybeSingle());
   if (membershipError || accessError) throw new Error("Could not verify client access. Please refresh this page.");
-  return { db, client, role: membership?.role === "owner" ? "owner" : access?.role ?? "none" };
+  return { db, client, userId, role: membership?.role === "owner" ? "owner" : access?.role ?? "none" };
 }

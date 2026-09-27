@@ -14,6 +14,7 @@ export function Shell({ children, clientId, clientName }: { children: React.Reac
         {clientId && <>
           <div className="sidebar-group">{clientName?.toUpperCase()}</div>
           <Link href={`/clients/${clientId}`}>Overview &amp; evidence</Link>
+          <Link href={`/clients/${clientId}/research`}>Research &amp; opportunities</Link>
           <Link href={`/clients/${clientId}/imports`}>Import Reddit data</Link>
         </>}
       </nav>

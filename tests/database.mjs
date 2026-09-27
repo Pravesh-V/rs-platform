@@ -18,6 +18,7 @@ await db.exec(sql);
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000100_client_owner_read.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000200_fact_review.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000300_rpc_anon_privileges.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927000400_manual_research.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -36,6 +37,10 @@ await db.exec(`
     values ('${a}','${org}','${researcher}','researcher'),('${a}','${org}','${manager}','manager');
   insert into public.client_facts(client_id,kind,statement)
     values ('${b}','product','B-only fact');
+  insert into public.community_research(client_id,subreddit,relevance_note,source_note,created_by)
+    values ('${b}','btest','Synthetic B-only community','Synthetic test fixture','${owner}');
+  insert into public.opportunities(client_id,external_id,canonical_url,subreddit,title,context_note,priority_reason,source_note,observed_at,created_by)
+    values ('${b}','t3_btest123','https://www.reddit.com/r/btest/comments/btest123/','btest','Synthetic B-only thread','Synthetic context','Synthetic priority','Synthetic test fixture','2026-09-02T00:00:00Z','${owner}');
   set role authenticated;
   set request.jwt.claim.sub = '${researcher}';
 `);
@@ -46,13 +51,28 @@ const newClient = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab';
 assert.equal((await db.query('insert into public.clients(id,organization_id,name) values ($1,$2,$3) returning id', [newClient,org,'New client'])).rows[0].id,newClient);
 assert.deepEqual((await db.query('select name from public.clients order by name')).rows.map(row => row.name), ['A','B','New client']);
 await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+assert.equal((await db.query('select count(*)::int as count from public.community_research')).rows[0].count,0);
+assert.equal((await db.query('select count(*)::int as count from public.opportunities')).rows[0].count,0);
+await db.query('insert into public.community_research(client_id,subreddit,relevance_note,source_note,created_by) values ($1,$2,$3,$4,$5)',[a,'tools','Synthetic relevance','Synthetic test fixture',researcher]);
+await assert.rejects(db.query('insert into public.community_research(client_id,subreddit,relevance_note,source_note,created_by) values ($1,$2,$3,$4,$5)',[b,'denied','Synthetic relevance','Synthetic test fixture',researcher]));
+const opportunityId = (await db.query('insert into public.opportunities(client_id,external_id,canonical_url,subreddit,title,context_note,priority_reason,source_note,observed_at,created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id',[a,'t3_abc123','https://www.reddit.com/r/tools/comments/abc123/','tools','Synthetic A thread','Synthetic context','Synthetic priority','Synthetic test fixture','2026-09-02T00:00:00Z',researcher])).rows[0].id;
+await assert.rejects(db.query('update public.opportunities set status = $1 where id = $2',['reviewed',opportunityId]));
+const statusSql = 'select public.set_opportunity_status($1,$2,$3) as id';
+assert.equal((await db.query(statusSql,[a,opportunityId,'reviewed'])).rows[0].id,opportunityId);
+assert.equal((await db.query(statusSql,[a,opportunityId,'reviewed'])).rows[0].id,opportunityId);
+await assert.rejects(db.query(statusSql,[b,opportunityId,'dismissed']));
+assert.equal((await db.query('select status from public.opportunities where id = $1',[opportunityId])).rows[0].status,'reviewed');
+assert.equal((await db.query('select count(*)::int as count from public.opportunities')).rows[0].count,1);
 await assert.rejects(db.query('insert into public.clients(organization_id,name) values ($1,$2) returning id', [org,'Denied client']));
-for (const rpcSignature of ['public.commit_reddit_import(uuid,uuid,text,text,jsonb)','public.record_contribution(uuid,uuid,text,text,text,text,text,text,timestamptz)','public.review_client_fact(uuid,uuid,text,text)']) {
+for (const rpcSignature of ['public.commit_reddit_import(uuid,uuid,text,text,jsonb)','public.record_contribution(uuid,uuid,text,text,text,text,text,text,timestamptz)','public.review_client_fact(uuid,uuid,text,text)','public.set_opportunity_status(uuid,uuid,text)']) {
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed', ['anon',rpcSignature,'EXECUTE'])).rows[0].allowed,false,`${rpcSignature} should deny anonymous calls`);
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed', ['authenticated',rpcSignature,'EXECUTE'])).rows[0].allowed,true,`${rpcSignature} should allow authenticated calls`);
 }
 for (const table of ['reddit_items','metric_snapshots','contributions','import_batches','audit_events']) {
   assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed', ['authenticated',`public.${table}`,'INSERT'])).rows[0].allowed,false,`${table} should require an RPC`);
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed', ['anon',`public.${table}`,'SELECT'])).rows[0].allowed,false,`${table} should not be visible anonymously`);
+}
+for (const table of ['community_research','opportunities']) {
   assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed', ['anon',`public.${table}`,'SELECT'])).rows[0].allowed,false,`${table} should not be visible anonymously`);
 }
 await db.exec(`set role anon`);
@@ -79,6 +99,7 @@ assert.deepEqual((await db.query('select review_status,reviewed_by from public.c
 await assert.rejects(db.query(reviewSql,[b,bFactId,'approved','Wrong client']));
 await db.exec(`set request.jwt.claim.sub = '${owner}'`);
 assert.equal((await db.query("select count(*)::int as count from public.audit_events where event_type = 'fact_reviewed'")).rows[0].count,2);
+assert.equal((await db.query("select count(*)::int as count from public.audit_events where event_type = 'opportunity_status_changed'")).rows[0].count,1);
 await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
 await assert.rejects(db.query('insert into public.metric_snapshots(client_id,item_id,observed_at,source_type) values ($1,$2,$3,$4)',[a,a,'2026-09-02T00:00:00Z','manual']));
 const campaign = '99999999-9999-4999-8999-999999999999';

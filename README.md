@@ -2,7 +2,7 @@
 
 Private, multi-client evidence workspace for Reddit research and campaign reporting. This repository is an **early Milestone 1 implementation**, not a completed platform. The full scope is in [docs/BUILD_BRIEF.md](docs/BUILD_BRIEF.md); actual completion and blockers are in [docs/STATUS.md](docs/STATUS.md).
 
-The current application signs users in through Supabase, enforces client access through Postgres policies, stores client facts and campaigns, imports permissioned Reddit observations, records user-reported publication URLs, compares timestamped lifetime-view observations, and exports the same campaign evidence as CSV. Publication URLs remain marked `user_reported` until independently verified. It does not make live Reddit, AI, Google, or search-provider calls.
+The current application signs users in through Supabase, enforces client access through Postgres policies, stores client facts and campaigns, imports permissioned Reddit observations, records user-reported publication URLs, compares timestamped lifetime-view observations, and exports the same campaign evidence as CSV. It also has a manual, sourced subreddit directory and opportunity queue. Publication URLs remain marked `user_reported` until independently verified. It does not make live Reddit, AI, Google, or search-provider calls.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ The current application signs users in through Supabase, enforces client access 
 - An isolated **development** Supabase project with Auth and Postgres, or a local Supabase stack. The local stack needs a Docker-compatible container runtime. [Supabase local setup](https://supabase.com/docs/guides/local-development/cli/getting-started).
 - An email user in Supabase Auth for the first agency owner.
 
-This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. The project-scoped Supabase CLI is installed. All four current migrations are applied to `rs-platform-dev`. Owner login, client creation, comparison display, authenticated CSV export, the fact-review RPC, and separate Auth-user API isolation have been verified there. Two development clients, comparison campaigns, and a labelled synthetic import are present; browser import, session persistence, and protected-URL browser checks remain.
+This checkout was created with Node 25.9, which produced an engine warning; build and unit checks passed here, but Node 24 should be used for ongoing work. The project-scoped Supabase CLI is installed. All five current migrations are applied to `rs-platform-dev`. Owner login, client creation, comparison display, authenticated CSV export, the fact-review RPC, manual research authorization, and separate Auth-user API isolation have been verified there. Two development clients, comparison campaigns, and a labelled synthetic import are present; browser import, session persistence, and protected-URL browser checks remain.
 
 ## Development setup
 
@@ -18,7 +18,7 @@ This checkout was created with Node 25.9, which produced an engine warning; buil
 2. Copy `.env.example` to `.env.local`. Fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from the **development** project. This publishable key is intended for browser use. Do not place a Supabase secret or service-role key in a `NEXT_PUBLIC_` variable.
 3. For a fresh development project, link it with the project-scoped CLI: `npx supabase login`, `npx supabase link --project-ref YOUR_DEV_PROJECT_REF`, `npx supabase db push --dry-run`, then `npx supabase db push` after reviewing the plan. This applies the migrations in `supabase/migrations/` with migration history. The CLI may ask for the development database password; enter it in the CLI prompt, not in chat or a tracked file. [Supabase migration workflow](https://supabase.com/docs/guides/deployment/database-migrations).
 
-   The supplied `rs-platform-dev` project already has all four current migrations applied through the Dashboard. Its CLI migration history is not yet synchronized. Before running `db push` against that project, link the CLI and mark versions `20260926000100`, `20260927000100`, `20260927000200`, and `20260927000300` as applied with `npx supabase migration repair VERSION --status applied` for each version, then verify with `npx supabase migration list`. Do not re-run these migrations there.
+   The supplied `rs-platform-dev` project already has all five current migrations applied through the Dashboard. Its CLI migration history is not yet synchronized. Before running `db push` against that project, link the CLI and mark versions `20260926000100`, `20260927000100`, `20260927000200`, `20260927000300`, and `20260927000400` as applied with `npx supabase migration repair VERSION --status applied` for each version, then verify with `npx supabase migration list`. Do not re-run these migrations there.
 4. In Supabase Auth, create an owner user. Get its UUID and run the following **in the development project’s SQL editor**, substituting that UUID:
 
    ```sql
