@@ -21,6 +21,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927000300_rpc_an
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000400_manual_research.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000500_content_review.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000600_campaign_history.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927000700_sentiment_review.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -136,6 +137,22 @@ const later = {...row,observed_at:'2026-10-02T00:00:00Z',views:50,score:5};
 await db.query(importSql,[a,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','later.csv','Permissioned export',JSON.stringify([later])]);
 assert.deepEqual((await db.query('select views::int as views from public.metric_snapshots order by observed_at')).rows.map(row => row.views),[10,50]);
 assert.equal((await db.query('select count(*)::int as count from public.import_batches')).rows[0].count,2);
+const itemId = (await db.query('select id from public.reddit_items where client_id=$1 and external_id=$2',[a,'t3_abc123'])).rows[0].id;
+const sentimentSql = 'select public.review_reddit_sentiment($1,$2,$3,$4,$5,$6) as version';
+const firstReview = [a,itemId,0,'mixed','pricing','Synthetic manual review'];
+assert.equal((await db.query(sentimentSql,firstReview)).rows[0].version,1);
+assert.equal((await db.query(sentimentSql,firstReview)).rows[0].version,1);
+await assert.rejects(db.query(sentimentSql,[a,itemId,0,'positive','pricing','Changed stale review']));
+await assert.rejects(db.query(sentimentSql,[b,itemId,0,'positive','pricing','Wrong client']));
+await assert.rejects(db.query('update public.sentiment_reviews set label=$1 where item_id=$2',['positive',itemId]));
+assert.equal((await db.query(sentimentSql,[a,itemId,1,'positive','product','Synthetic corrected review'])).rows[0].version,2);
+assert.equal((await db.query('select count(*)::int as count from public.sentiment_review_versions where item_id=$1',[itemId])).rows[0].count,2);
+assert.equal((await db.query('select label from public.sentiment_reviews where item_id=$1',[itemId])).rows[0].label,'positive');
+for (const table of ['sentiment_reviews','sentiment_review_versions']) {
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['authenticated',`public.${table}`,'INSERT'])).rows[0].allowed,false);
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['anon',`public.${table}`,'SELECT'])).rows[0].allowed,false);
+}
+assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon','public.review_reddit_sentiment(uuid,uuid,integer,text,text,text)','EXECUTE'])).rows[0].allowed,false);
 const contributionSql = 'select public.record_contribution($1,$2,$3,$4,$5,$6,$7,$8,$9::timestamptz) as id';
 const contributionArgs = [a,null,'t3_def456','https://www.reddit.com/r/tools/comments/def456/','tools','post','Published example','post','2026-09-03T00:00:00Z'];
 const contributionId = (await db.query(contributionSql,contributionArgs)).rows[0].id;

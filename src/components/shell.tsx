@@ -17,6 +17,7 @@ export function Shell({ children, clientId, clientName }: { children: React.Reac
           <Link href={`/clients/${clientId}/research`}>Research &amp; opportunities</Link>
           <Link href={`/clients/${clientId}/content`}>Drafts &amp; review</Link>
           <Link href={`/clients/${clientId}/campaigns`}>Campaign history</Link>
+          <Link href={`/clients/${clientId}/sentiment`}>Sentiment review</Link>
           <Link href={`/clients/${clientId}/imports`}>Import Reddit data</Link>
         </>}
       </nav>
