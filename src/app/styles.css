@@ -28,3 +28,4 @@ h3{font-size:15px;margin-bottom:5px}
 @media(max-width:950px){.content-columns{grid-template-columns:1fr}.content-list{max-height:260px}}@media(max-width:650px){.review-actions{grid-template-columns:1fr}.wide-field{grid-column:auto}}
 .campaign-version{padding:12px 0;border-bottom:1px solid var(--line)}.campaign-version:last-child{border-bottom:0}.campaign-version p{margin:4px 0}
 .ai-summary{margin:18px 20px 10px}.ai-summary>div{min-width:0}.ai-summary strong{font-size:18px}.ai-summary .small{color:#cfc8c4}
+.record-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}

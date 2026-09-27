@@ -26,6 +26,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927000800_manual
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000900_report_snapshots.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927001000_manual_search_visibility.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927001100_manual_analytics.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927001200_content_calendar.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -198,6 +199,38 @@ assert.equal((await db.query('select count(*)::int as count from public.content_
 await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
 assert.equal((await db.query(reviseDraftSql,[a,draftId,2,'Helpful reply','Third revision with another source.','Synthetic editorial test'])).rows[0].version,3);
 assert.deepEqual((await db.query('select status,approved_by from public.content_drafts where id=$1',[draftId])).rows[0],{status:'draft',approved_by:null});
+assert.equal((await db.query(reviewDraftSql,[a,draftId,3,'submit',null])).rows[0].id,draftId);
+await db.exec(`set request.jwt.claim.sub = '${manager}'`);
+assert.equal((await db.query(reviewDraftSql,[a,draftId,3,'approve','Third version checked'])).rows[0].id,draftId);
+const planId = '40404040-4040-4404-8404-404040404040';
+const scheduleSql = 'select public.schedule_content_draft($1,$2,$3,$4,$5::timestamptz,$6,$7) as id';
+const planArgs = [planId,a,draftId,3,'2030-10-20T12:00:00Z','tools','Synthetic planning check'];
+assert.equal((await db.query(scheduleSql,planArgs)).rows[0].id,planId);
+assert.equal((await db.query(scheduleSql,planArgs)).rows[0].id,planId);
+await assert.rejects(db.query(scheduleSql,['41414141-4141-4414-8414-414141414141',a,draftId,3,'2030-10-21T12:00:00Z','tools','Duplicate active plan']));
+await assert.rejects(db.query(scheduleSql,[planId,b,draftId,3,'2030-10-20T12:00:00Z','tools','Wrong client']));
+await assert.rejects(db.query('insert into public.content_calendar_entries(id,organization_id,client_id,draft_id,draft_version,planned_at,subreddit,purpose,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+  ['42424242-4242-4424-8424-424242424242',org,a,draftId,3,'2030-10-22T12:00:00Z','tools','Direct write denied',manager]));
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+assert.equal((await db.query('select count(*)::int as count from public.content_calendar_entries where client_id=$1',[a])).rows[0].count,1);
+await assert.rejects(db.query(scheduleSql,['43434343-4343-4434-8434-434343434343',a,draftId,3,'2030-10-23T12:00:00Z','tools','Researcher denied']));
+assert.equal((await db.query(reviseDraftSql,[a,draftId,3,'Helpful reply','Fourth revision revokes approval.','Synthetic editorial test'])).rows[0].version,4);
+assert.equal((await db.query('select status,cancellation_reason from public.content_calendar_entries where id=$1',[planId])).rows[0].status,'cancelled');
+await db.exec(`set request.jwt.claim.sub = '${manager}'`);
+assert.equal((await db.query(reviewDraftSql,[a,draftId,4,'submit',null])).rows[0].id,draftId);
+assert.equal((await db.query(reviewDraftSql,[a,draftId,4,'approve','Fourth version checked'])).rows[0].id,draftId);
+const secondPlanId = '44444444-4444-4444-8444-444444444440';
+assert.equal((await db.query(scheduleSql,[secondPlanId,a,draftId,4,'2030-10-24T12:00:00Z','tools','New approved version'])).rows[0].id,secondPlanId);
+const cancelPlanSql = 'select public.cancel_content_plan($1,$2,$3) as id';
+assert.equal((await db.query(cancelPlanSql,[a,secondPlanId,'Timing changed'])).rows[0].id,secondPlanId);
+assert.equal((await db.query(cancelPlanSql,[a,secondPlanId,'Timing changed'])).rows[0].id,secondPlanId);
+assert.equal((await db.query('select count(*)::int as count from public.content_calendar_entries where status=$1',['planned'])).rows[0].count,0);
+await assert.rejects(db.query(cancelPlanSql,[b,secondPlanId,'Wrong client']));
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+assert.equal((await db.query("select count(*)::int as count from public.audit_events where event_type='content_calendar_cancelled_on_revision' and record_id=$1",[planId])).rows[0].count,1);
+for (const signature of ['public.schedule_content_draft(uuid,uuid,uuid,integer,timestamp with time zone,text,text)','public.cancel_content_plan(uuid,uuid,text)']) {
+  assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',signature,'EXECUTE'])).rows[0].allowed,false);
+}
 for (const rpcSignature of ['public.create_content_draft(uuid,uuid,uuid,uuid,text,text,text)','public.revise_content_draft(uuid,uuid,integer,text,text,text)','public.review_content_draft(uuid,uuid,integer,text,text)']) {
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',rpcSignature,'EXECUTE'])).rows[0].allowed,false);
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['authenticated',rpcSignature,'EXECUTE'])).rows[0].allowed,true);

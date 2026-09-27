@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { z } from "zod";
 import { createDraft, reviseDraft, reviewDraft } from "@/app/actions/content";
+import { cancelDraftPlan, scheduleApprovedDraft } from "@/app/actions/calendar";
 import { Shell } from "@/components/shell";
 import { requireClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
@@ -12,10 +13,14 @@ export default async function Content({ params, searchParams }: {
   const { clientId } = await params;
   const { error: actionError, draft: requestedDraft } = await searchParams;
   const { db, client, role } = await requireClient(clientId);
-  const [{ data: drafts, error: draftsError }, { data: campaigns, error: campaignsError }, { data: opportunities, error: opportunitiesError }] = await Promise.all([
+  const [{ data: drafts, error: draftsError }, { data: campaigns, error: campaignsError }, { data: opportunities, error: opportunitiesError },
+    { data: plans, count: planCount, error: plansError }] = await Promise.all([
     retryIdempotentRequest(async () => db.from("content_drafts").select("id,current_title,current_version,status,updated_at").eq("client_id", clientId).order("updated_at", { ascending: false }).limit(100)),
     retryIdempotentRequest(async () => db.from("campaigns").select("id,name").eq("client_id", clientId).order("name").limit(100)),
     retryIdempotentRequest(async () => db.from("opportunities").select("id,title,subreddit").eq("client_id", clientId).order("created_at", { ascending: false }).limit(100)),
+    retryIdempotentRequest(async () => db.from("content_calendar_entries")
+      .select("id,draft_id,draft_version,planned_at,subreddit,purpose,status,cancellation_reason,created_at",{count:"exact"})
+      .eq("client_id",clientId).order("created_at",{ascending:false}).limit(100)),
   ]);
   const selectedId = z.uuid().safeParse(requestedDraft).success ? requestedDraft! : drafts?.[0]?.id;
   const [{ data: selected, error: selectedError }, { data: versions, error: versionsError }, { data: events, error: eventsError }] = selectedId ? await Promise.all([
@@ -25,7 +30,10 @@ export default async function Content({ params, searchParams }: {
   ]) : [{ data: null, error: null }, { data: null, error: null }, { data: null, error: null }];
   const canEdit = ["owner", "manager", "researcher", "writer"].includes(role);
   const canReview = ["owner", "manager", "reviewer"].includes(role);
-  const loadError = draftsError || campaignsError || opportunitiesError || selectedError || versionsError || eventsError;
+  const canPlan = ["owner", "manager"].includes(role);
+  const activePlanForSelected = plans?.find((plan) => plan.draft_id===selected?.id && plan.status==="planned");
+  const plansCapped = planCount !== null && planCount > (plans?.length ?? 0);
+  const loadError = draftsError || campaignsError || opportunitiesError || selectedError || versionsError || eventsError || plansError;
 
   return <Shell clientId={clientId} clientName={client.name}>
     <div className="page-heading"><div><div className="eyebrow">CONTENT WORKFLOW</div><h1>Drafts &amp; review</h1><p className="muted">Versioned internal content for {client.name}.</p></div><Link className="button secondary" href={`/clients/${clientId}`}>Back to overview</Link></div>
@@ -62,5 +70,20 @@ export default async function Content({ params, searchParams }: {
           <h3>Review history</h3>{events?.length ? events.map((event) => <p className="small" key={event.id}><span className="tag">{event.decision.replaceAll("_", " ")}</span> Version {event.version} · {new Date(event.created_at).toLocaleString("en")}{event.note ? ` · ${event.note}` : ""}</p>) : <p className="muted small">No review decisions yet.</p>}{events?.length === 100 && <p className="muted small">Only the latest 100 events are shown.</p>}</div>
       </div> : selectedError ? <div className="empty compact">Draft unavailable.</div> : <div className="empty compact">No selected draft.</div>}
     </section></div>
+    <section className="panel"><div className="panel-heading"><div><h2>Content calendar</h2><p className="muted small">Internal plans for approved drafts. A revision automatically cancels the old plan. Planning never publishes content.</p></div><span className="pill">{planCount ?? plans?.length ?? 0} entries</span></div>
+      {plansCapped && <div className="notice warning">Showing the newest 100 entries. Older calendar history needs pagination.</div>}
+      {canPlan && selected?.status==="approved" && !activePlanForSelected && !plansCapped && !plansError && <details className="add-detail"><summary>Plan this approved version</summary><form action={scheduleApprovedDraft} className="form-grid"><input type="hidden" name="clientId" value={clientId} /><input type="hidden" name="draftId" value={selected.id} /><input type="hidden" name="version" value={selected.current_version} />
+        <label>Planned time with timezone offset<input name="plannedAt" required placeholder="2026-10-15T12:00:00+05:30" /></label>
+        <label>Community without r/<input name="subreddit" required maxLength={40} pattern="[A-Za-z0-9_]{2,40}" placeholder="community" /></label>
+        <label className="wide-field">Purpose and rules note<textarea name="purpose" required maxLength={1000} rows={2} placeholder="Why this community and timing are appropriate; confirm its current rules before posting" /></label>
+        <div className="form-actions"><button className="button primary">Save plan</button></div>
+      </form></details>}
+      {selected?.status==="approved" && activePlanForSelected && <p className="coverage-note">This draft already has a planned entry. Cancel it before choosing a different date.</p>}
+      {plans?.length ? <div className="record-list">{plans.map((plan) => <div className="record" key={plan.id}><div className="record-heading"><strong>{drafts?.find((draft) => draft.id===plan.draft_id)?.current_title ?? `Draft ${plan.draft_id.slice(0,8)}`} · v{plan.draft_version}</strong><span className="tag">{plan.status}</span></div>
+        <p className="small">r/{plan.subreddit} · {new Date(plan.planned_at).toLocaleString("en",{dateStyle:"medium",timeStyle:"short"})} · {plan.purpose}</p>
+        {plan.cancellation_reason && <p className="muted small">Cancelled: {plan.cancellation_reason}</p>}
+        {canPlan && plan.status==="planned" && <details className="review-detail"><summary>Cancel this plan</summary><form action={cancelDraftPlan} className="stack"><input type="hidden" name="clientId" value={clientId} /><input type="hidden" name="draftId" value={plan.draft_id} /><input type="hidden" name="entryId" value={plan.id} /><label>Reason<textarea name="reason" required maxLength={1000} rows={2} /></label><button className="button secondary">Cancel plan</button></form></details>}
+      </div>)}</div> : plansError ? <div className="empty compact">Calendar unavailable.</div> : <div className="empty compact">No content planned yet.</div>}
+    </section>
   </Shell>;
 }
