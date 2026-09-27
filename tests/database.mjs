@@ -25,6 +25,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927000700_sentim
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000800_manual_ai_visibility.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000900_report_snapshots.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927001000_manual_search_visibility.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927001100_manual_analytics.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -317,6 +318,36 @@ assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed
 for (const table of ['search_sets','search_keywords','search_observations']) {
   assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['anon',`public.${table}`,'SELECT'])).rows[0].allowed,false);
 }
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+const analyticsId = '34343434-3434-4343-8343-343434343434';
+const analyticsSql = `insert into public.analytics_observations
+  (id,organization_id,client_id,campaign_id,source_kind,property_reference,property_timezone,
+   period_start,period_end,dimension_scope,source_name,medium,metric_name,event_name,metric_value,
+   currency,attribution_note,source_note,created_by)
+  values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`;
+const analyticsArgs = [analyticsId,org,a,campaign,'ga4_export','123456789','UTC',
+  '2026-09-01','2026-09-30','session','reddit','organic_social','sessions',null,15,
+  null,'Session source and medium, same property and date range','Synthetic authorized export',manager];
+await db.exec(`set request.jwt.claim.sub = '${manager}'`);
+await db.query(analyticsSql,analyticsArgs);
+assert.equal((await db.query('select metric_value::int as value from public.analytics_observations where id=$1',[analyticsId])).rows[0].value,15);
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+assert.equal((await db.query("select count(*)::int as count from public.audit_events where event_type='analytics_observation_recorded' and record_id=$1",[analyticsId])).rows[0].count,1);
+await db.exec(`set request.jwt.claim.sub = '${manager}'`);
+await assert.rejects(db.query('update public.analytics_observations set metric_value=16 where id=$1',[analyticsId]));
+await assert.rejects(db.query(analyticsSql,['35353535-3535-4353-8353-353535353535',org,b,...analyticsArgs.slice(3)]));
+await assert.rejects(db.query(analyticsSql,['36363636-3636-4363-8363-363636363636',...analyticsArgs.slice(1,14),1.5,...analyticsArgs.slice(15)]));
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+assert.equal((await db.query('select count(*)::int as count from public.analytics_observations where client_id=$1',[a])).rows[0].count,1);
+await assert.rejects(db.query(analyticsSql,['37373737-3737-4373-8373-373737373737',...analyticsArgs.slice(1,-1),researcher]));
+await db.exec(`set role anon`);
+await assert.rejects(db.query('select * from public.analytics_observations'));
+await db.exec(`set role authenticated; set request.jwt.claim.sub = '${owner}'`);
+const privateAnalytics = '38383838-3838-4383-8383-383838383838';
+await db.query(analyticsSql,[privateAnalytics,org,b,null,...analyticsArgs.slice(4,-1),owner]);
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+assert.equal((await db.query('select count(*)::int as count from public.analytics_observations where client_id=$1',[b])).rows[0].count,0);
+assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['anon','public.analytics_observations','SELECT'])).rows[0].allowed,false);
 await db.exec(`set request.jwt.claim.sub = '${owner}'`);
 console.log('RPC access, two-period evidence, idempotency and conflict checks passed.');
 const saved = await db.dumpDataDir();
