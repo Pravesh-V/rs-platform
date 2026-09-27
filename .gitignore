@@ -8,3 +8,4 @@ supabase/.branches/
 supabase/.profiles/
 supabase/.temp/
 *.log
+tmp/

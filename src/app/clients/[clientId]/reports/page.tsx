@@ -21,15 +21,15 @@ export default async function ReportsPage({ params, searchParams }: {
   const { clientId } = await params;
   const filters = await searchParams;
   const { db, client, role } = await requireClient(clientId);
-  const [{ data: reports, error: reportsError }, { data: campaigns, error: campaignsError }] = await Promise.all([
+  const [{ data: reports, count: reportCount, error: reportsError }, { data: campaigns, error: campaignsError }] = await Promise.all([
     retryIdempotentRequest(async () => db.from("report_snapshots")
-      .select("id,campaign_id,report_month,version,status,calculation_version,dataset,dataset_sha256,executive_summary,next_steps,limitations,created_at,approved_at,approval_note")
-      .eq("client_id",clientId).order("created_at",{ascending:false}).limit(101)),
+      .select("id,campaign_id,report_month,version,status,calculation_version,dataset,dataset_sha256,executive_summary,next_steps,limitations,created_at,approved_at,approval_note",{count:"exact"})
+      .eq("client_id",clientId).order("created_at",{ascending:false}).limit(100)),
     retryIdempotentRequest(async () => db.from("campaigns").select("id,name,baseline_start,baseline_end,comparison_start,comparison_end")
       .eq("client_id",clientId).order("created_at",{ascending:false}).limit(100)),
   ]);
-  const capped = (reports?.length ?? 0)>100;
-  const visibleReports = reports?.slice(0,100) ?? [];
+  const capped = reportCount !== null && reportCount > (reports?.length ?? 0);
+  const visibleReports = reports ?? [];
   const selected = visibleReports.find((report) => report.id===filters.report) ?? visibleReports[0];
   const dataset = selected?.dataset as ReportDataset | undefined;
   const campaignName = (id: string) => campaigns?.find((campaign) => campaign.id===id)?.name ?? "Campaign";
@@ -37,7 +37,7 @@ export default async function ReportsPage({ params, searchParams }: {
 
   return <Shell clientId={clientId} clientName={client.name}>
     <div className="page-heading"><div><div className="eyebrow">CLIENT WORKSPACE · REPORTS</div><h1>Monthly evidence snapshots</h1><p className="muted">Versioned comparisons captured from stored campaign observations.</p></div><Link className="button secondary" href={`/clients/${clientId}`}>Back to overview</Link></div>
-    <div className="notice warning"><strong>Internal evidence report, not an attribution claim.</strong><p>Only manually stored, campaign-linked Reddit observations are included. Missing views remain unknown. Analytics, search, competitor and provider AI data are disconnected, and a branded PDF is not available yet.</p></div>
+    <div className="notice warning"><strong>Internal evidence report, not an attribution claim.</strong><p>Only manually stored, campaign-linked Reddit observations are included. Missing views remain unknown. Analytics, search, competitor and provider AI data are disconnected. An approved version can be downloaded as a branded PDF.</p></div>
     {filters.error && <div className="notice error" role="alert">{filters.error}</div>}
     {(reportsError || campaignsError) && <div className="notice error" role="alert">Reports could not fully load. {reportsError?.message ?? campaignsError?.message}</div>}
     {capped && <div className="notice warning">Showing the newest 100 reports. Older report pagination is still needed.</div>}
@@ -56,7 +56,7 @@ export default async function ReportsPage({ params, searchParams }: {
     <div className="content-columns"><section className="panel"><div className="panel-heading"><div><h2>Saved versions</h2><p className="muted small">Newest 100, newest version first for each issue month.</p></div></div>
       {visibleReports.length ? <div className="record-list content-list">{visibleReports.map((report) => <Link key={report.id} className={`draft-row${selected?.id===report.id ? " selected" : ""}`} href={`?report=${report.id}`}><strong>{campaignName(report.campaign_id)} · {report.report_month.slice(0,7)} · v{report.version}</strong><span className="tag">{report.status}</span><span className="muted small">Created {new Date(report.created_at).toLocaleString("en")}</span></Link>)}</div> : reportsError ? <div className="empty compact">Reports unavailable.</div> : <div className="empty compact">No report snapshots yet.</div>}
     </section><section className="panel"><div className="panel-heading"><div><h2>{selected ? `${campaignName(selected.campaign_id)} · ${selected.report_month.slice(0,7)} · v${selected.version}` : "Selected report"}</h2><p className="muted small">{selected ? `${selected.status} · ${selected.calculation_version}` : "Select or create a report."}</p></div>
-      {selected && <Link className="button secondary" href={`/clients/${clientId}/reports/${selected.id}/download`}>Download evidence JSON</Link>}</div>
+      {selected && <div className="filter-row"><Link className="button secondary" href={`/clients/${clientId}/reports/${selected.id}/download`}>Evidence JSON</Link>{selected.status === "approved" && <Link className="button primary" href={`/clients/${clientId}/reports/${selected.id}/pdf`}>Download PDF</Link>}</div>}</div>
       {selected && dataset && <div className="draft-detail">
         <p><strong>Executive summary:</strong> {selected.executive_summary}</p>
         <div className="comparison-grid"><div className="metric-card"><span className="eyebrow">BASELINE · {dataset.baseline_dates.join(" – ")}</span><strong>{number(dataset.baseline.latest_lifetime_views)}</strong><span className="muted small">Latest recorded lifetime views · {dataset.baseline.measured_items}/{dataset.baseline.items} measured items · {dataset.baseline.observations} observations</span></div>
