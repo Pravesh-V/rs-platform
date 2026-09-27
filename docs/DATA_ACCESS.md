@@ -1,10 +1,11 @@
 # Data access and integration register
 
-Updated 26 September 2026. This records integration status and permission prerequisites; it is not evidence that accounts are connected.
+Updated 27 September 2026. This records integration status and permission prerequisites; it is not evidence that accounts are connected.
 
 | Data source | Current status | Needed before activation |
 |---|---|---|
-| Owner-supplied Reddit CSV | Import UI/code implemented; DB test pending | Owner’s permission to provide, store, process, and report the records; source note; retention terms. |
+| Owner-supplied Reddit CSV | Import UI/code and live development RPC tested; signed-in browser import pending | Owner’s permission to provide, store, process, and report the records; source note; retention terms. |
+| Manual community/opportunity notes and content drafts | Client-scoped UI, database policies, and live rolled-back authorization test | Permission to retain source material and factual claims. Check subreddit rules and affiliation before any manual publication. Internal approval has no publish side effect. |
 | Reddit Data API or commercial supplier | Disconnected | Written approval/agreement for commercial use and specific collection/processing, credentials, rate and retention terms. [Reddit policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy). |
 | Reddit account insights | Disconnected | Supported account access or authorized owner export. Product-visible counters do not establish API availability. |
 | OpenAI web-search API | Disconnected | Application API account, key kept server-side, model/tool compatibility, data-processing permission, cost cap. [Docs](https://developers.openai.com/api/docs/guides/tools-web-search). |

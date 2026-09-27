@@ -19,6 +19,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927000100_client
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000200_fact_review.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000300_rpc_anon_privileges.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000400_manual_research.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927000500_content_review.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -125,6 +126,55 @@ await assert.rejects(db.query(contributionSql,[...contributionArgs.slice(0,7),'c
 await assert.rejects(db.query(contributionSql,[b,...contributionArgs.slice(1)]));
 assert.equal((await db.query('select count(*)::int as count from public.contributions')).rows[0].count,1);
 assert.equal((await db.query('select verification_status from public.contributions')).rows[0].verification_status,'user_reported');
+const draftId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const createDraftSql = 'select public.create_content_draft($1,$2,$3,$4,$5,$6,$7) as id';
+const draftArgs = [draftId,a,campaign,opportunityId,'Helpful reply','Answer with a source, no sales claim.','Synthetic editorial test'];
+assert.equal((await db.query(createDraftSql,draftArgs)).rows[0].id,draftId);
+assert.equal((await db.query(createDraftSql,draftArgs)).rows[0].id,draftId);
+await assert.rejects(db.query(createDraftSql,[draftId,a,campaign,opportunityId,'Changed','Answer with a source, no sales claim.','Synthetic editorial test']));
+await assert.rejects(db.query(createDraftSql,['ffffffff-ffff-4fff-8fff-ffffffffffff',b,null,null,'Denied','No access','Synthetic editorial test']));
+assert.equal((await db.query('select count(*)::int as count from public.content_drafts')).rows[0].count,1);
+assert.equal((await db.query('select count(*)::int as count from public.content_draft_versions')).rows[0].count,1);
+await assert.rejects(db.query('update public.content_drafts set status=$1 where id=$2',['approved',draftId]));
+const reviewDraftSql = 'select public.review_content_draft($1,$2,$3,$4,$5) as id';
+assert.equal((await db.query(reviewDraftSql,[a,draftId,1,'submit',null])).rows[0].id,draftId);
+assert.equal((await db.query(reviewDraftSql,[a,draftId,1,'submit',null])).rows[0].id,draftId);
+await assert.rejects(db.query(reviewDraftSql,[a,draftId,1,'approve','Cannot self-approve as researcher']));
+await assert.rejects(db.query(reviewDraftSql,[b,draftId,1,'request_revision','Wrong client']));
+await db.exec(`set request.jwt.claim.sub = '${manager}'`);
+assert.equal((await db.query(reviewDraftSql,[a,draftId,1,'request_revision','Add a primary source'])).rows[0].id,draftId);
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+const reviseDraftSql = 'select public.revise_content_draft($1,$2,$3,$4,$5,$6) as version';
+const revisionArgs = [a,draftId,1,'Helpful reply','Updated answer with a primary source.','Synthetic editorial test'];
+assert.equal((await db.query(reviseDraftSql,revisionArgs)).rows[0].version,2);
+assert.equal((await db.query(reviseDraftSql,revisionArgs)).rows[0].version,2);
+await assert.rejects(db.query(reviseDraftSql,[a,draftId,1,'Different edit','Stale version','Synthetic editorial test']));
+await assert.rejects(db.query(reviewDraftSql,[a,draftId,1,'submit',null]));
+assert.equal((await db.query(reviewDraftSql,[a,draftId,2,'submit',null])).rows[0].id,draftId);
+await db.exec(`set request.jwt.claim.sub = '${manager}'`);
+assert.equal((await db.query(reviewDraftSql,[a,draftId,2,'approve','Source checked'])).rows[0].id,draftId);
+assert.equal((await db.query(reviewDraftSql,[a,draftId,2,'approve','Source checked'])).rows[0].id,draftId);
+assert.deepEqual((await db.query('select current_version,status,approved_by from public.content_drafts where id=$1',[draftId])).rows[0],{current_version:2,status:'approved',approved_by:manager});
+assert.equal((await db.query('select count(*)::int as count from public.content_review_events where draft_id=$1',[draftId])).rows[0].count,4);
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+assert.equal((await db.query(reviseDraftSql,[a,draftId,2,'Helpful reply','Third revision with another source.','Synthetic editorial test'])).rows[0].version,3);
+assert.deepEqual((await db.query('select status,approved_by from public.content_drafts where id=$1',[draftId])).rows[0],{status:'draft',approved_by:null});
+for (const rpcSignature of ['public.create_content_draft(uuid,uuid,uuid,uuid,text,text,text)','public.revise_content_draft(uuid,uuid,integer,text,text,text)','public.review_content_draft(uuid,uuid,integer,text,text)']) {
+  assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',rpcSignature,'EXECUTE'])).rows[0].allowed,false);
+  assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['authenticated',rpcSignature,'EXECUTE'])).rows[0].allowed,true);
+}
+for (const table of ['content_drafts','content_draft_versions','content_review_events']) {
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['authenticated',`public.${table}`,'INSERT'])).rows[0].allowed,false);
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['anon',`public.${table}`,'SELECT'])).rows[0].allowed,false);
+}
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+const bDraftId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+await db.query(createDraftSql,[bDraftId,b,null,null,'B private draft','Do not expose to A','Synthetic B-only fixture']);
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+assert.equal((await db.query('select count(*)::int as count from public.content_drafts where client_id=$1',[b])).rows[0].count,0);
+assert.equal((await db.query('select count(*)::int as count from public.content_draft_versions where client_id=$1',[b])).rows[0].count,0);
+await assert.rejects(db.query(reviewDraftSql,[b,bDraftId,1,'submit',null]));
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
 console.log('RPC access, two-period evidence, idempotency and conflict checks passed.');
 const saved = await db.dumpDataDir();
 await db.close();
