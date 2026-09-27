@@ -23,6 +23,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927000500_conten
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000600_campaign_history.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000700_sentiment_review.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000800_manual_ai_visibility.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927000900_report_snapshots.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -258,6 +259,38 @@ for (const table of ['ai_answer_runs','ai_citations','ai_answer_reviews']) {
 for (const signature of ['public.freeze_ai_prompt_set(uuid,uuid)','public.record_manual_ai_answer(uuid,uuid,uuid,uuid,text,text,text,text,text,integer,timestamp with time zone,text,text,text,text,jsonb)','public.review_ai_answer(uuid,uuid,integer,boolean,boolean,text)']) {
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',signature,'EXECUTE'])).rows[0].allowed,false);
 }
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+const reportId = '20202020-2020-4020-8020-202020202020';
+const reportSql = 'select public.create_report_snapshot($1,$2,$3,$4::date,$5,$6,$7) as id';
+const reportArgs = [reportId,a,campaign,'2026-10-01','Synthetic observation summary','Check missing views next month','Synthetic fixture; no attribution'];
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+await assert.rejects(db.query(reportSql,reportArgs));
+await db.exec(`set request.jwt.claim.sub = '${manager}'`);
+assert.equal((await db.query(reportSql,reportArgs)).rows[0].id,reportId);
+assert.equal((await db.query(reportSql,reportArgs)).rows[0].id,reportId);
+await assert.rejects(db.query(reportSql,[reportId,b,campaign,...reportArgs.slice(3)]));
+const report = (await db.query('select version,status,dataset,dataset_sha256 from public.report_snapshots where id=$1',[reportId])).rows[0];
+assert.equal(report.version,1);
+assert.equal(report.status,'draft');
+assert.equal(report.dataset.baseline.latest_lifetime_views,10);
+assert.equal(report.dataset.comparison.latest_lifetime_views,50);
+assert.equal(report.dataset.matched.change,40);
+assert.equal(report.dataset.evidence_snapshot_ids.length,2);
+assert.match(report.dataset_sha256,/^[a-f0-9]{64}$/);
+await assert.rejects(db.query('update public.report_snapshots set executive_summary=$1 where id=$2',['Tampered',reportId]));
+const approveReportSql = 'select public.approve_report_snapshot($1,$2,$3) as id';
+assert.equal((await db.query(approveReportSql,[a,reportId,'Reviewed synthetic observations'])).rows[0].id,reportId);
+assert.equal((await db.query(approveReportSql,[a,reportId,'Reviewed synthetic observations'])).rows[0].id,reportId);
+await assert.rejects(db.query(approveReportSql,[b,reportId,'Wrong client']));
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+assert.equal((await db.query('select count(*)::int as count from public.audit_events where record_id=$1',[reportId])).rows[0].count,2);
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+await assert.rejects(db.query(approveReportSql,[a,reportId,'Researcher approval denied']));
+assert.equal((await db.query('select count(*)::int as count from public.report_snapshots where client_id=$1',[b])).rows[0].count,0);
+for (const signature of ['public.create_report_snapshot(uuid,uuid,uuid,date,text,text,text)','public.approve_report_snapshot(uuid,uuid,text)']) {
+  assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',signature,'EXECUTE'])).rows[0].allowed,false);
+}
+assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['authenticated','public.report_snapshots','INSERT'])).rows[0].allowed,false);
 await db.exec(`set request.jwt.claim.sub = '${owner}'`);
 console.log('RPC access, two-period evidence, idempotency and conflict checks passed.');
 const saved = await db.dumpDataDir();
