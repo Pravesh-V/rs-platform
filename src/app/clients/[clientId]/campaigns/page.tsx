@@ -2,6 +2,7 @@ import Link from "next/link";
 import { z } from "zod";
 import { addCampaignEvent, reviseCampaign } from "@/app/actions/campaigns";
 import { Shell } from "@/components/shell";
+import { UtmBuilder } from "@/components/utm-builder";
 import { requireClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 
@@ -15,10 +16,11 @@ export default async function CampaignPlanning({ params, searchParams }: {
   const { data: campaigns, error: campaignsError } = await retryIdempotentRequest(async () =>
     db.from("campaigns").select("id,name,goal,baseline_start,baseline_end,comparison_start,comparison_end,current_version").eq("client_id", clientId).order("created_at", { ascending: false }).limit(100));
   const selected = campaigns?.find((item) => item.id === requestedCampaign) ?? campaigns?.[0];
-  const [{ data: versions, error: versionsError }, { data: events, error: eventsError }] = selected ? await Promise.all([
+  const [{ data: versions, error: versionsError }, { data: events, error: eventsError }, { data: contributionOptions, error: contributionsError }] = selected ? await Promise.all([
     retryIdempotentRequest(async () => db.from("campaign_versions").select("id,version,name,goal,baseline_start,baseline_end,comparison_start,comparison_end,change_reason,origin,recorded_at").eq("client_id", clientId).eq("campaign_id", selected.id).order("version", { ascending: false }).limit(100)),
     retryIdempotentRequest(async () => db.from("campaign_events").select("id,event_type,occurred_at,description,source_note,recorded_at").eq("client_id", clientId).eq("campaign_id", selected.id).order("occurred_at", { ascending: false }).limit(100)),
-  ]) : [{ data: null, error: null }, { data: null, error: null }];
+    retryIdempotentRequest(async () => db.from("contributions").select("id,format,published_at").eq("client_id",clientId).eq("campaign_id",selected.id).order("published_at",{ascending:false}).limit(101)),
+  ]) : [{ data: null, error: null }, { data: null, error: null }, { data: null, error: null }];
   const canEdit = ["owner", "manager", "researcher"].includes(role);
   const invalidSelection = requestedCampaign && z.uuid().safeParse(requestedCampaign).success && !campaigns?.some((item) => item.id === requestedCampaign);
 
@@ -26,13 +28,14 @@ export default async function CampaignPlanning({ params, searchParams }: {
     <div className="page-heading"><div><div className="eyebrow">CAMPAIGN HISTORY</div><h1>Windows &amp; interventions</h1><p className="muted">Keep analysis periods and other changes explainable for {client.name}.</p></div><Link href={`/clients/${clientId}`} className="button secondary">Back to comparison</Link></div>
     <div className="notice warning"><strong>Observational evidence.</strong><p>Changing a window recalculates the live comparison. Earlier window definitions remain in history; launch, pricing, advertising and site changes are context, not proof that they caused a metric shift. Legacy campaigns start with a snapshot taken when this feature was installed.</p></div>
     {actionError && <div className="notice error" role="alert">{actionError}</div>}
-    {(campaignsError || versionsError || eventsError) && <div className="notice error" role="alert">Some campaign history could not load. Refresh to retry. {campaignsError?.message || versionsError?.message || eventsError?.message}</div>}
+    {(campaignsError || versionsError || eventsError || contributionsError) && <div className="notice error" role="alert">Some campaign history could not load. Refresh to retry. {campaignsError?.message || versionsError?.message || eventsError?.message || contributionsError?.message}</div>}
     {invalidSelection && <div className="notice warning">That campaign is unavailable to this client; showing the most recent accessible campaign.</div>}
     <div className="content-columns"><section className="panel"><div className="panel-heading"><div><h2>Campaigns</h2><p className="muted small">Showing the newest 100.</p></div></div>
       {campaigns?.length ? <div className="record-list content-list">{campaigns.map((campaign) => <Link className={`draft-row${selected?.id === campaign.id ? " selected" : ""}`} href={`?campaign=${campaign.id}`} key={campaign.id}><strong>{campaign.name}</strong><span className="muted small">Version {campaign.current_version} · {campaign.baseline_start} to {campaign.comparison_end}</span></Link>)}</div> : campaignsError ? <div className="empty compact">Campaigns unavailable.</div> : <div className="empty compact">No campaigns yet. Create one on the client overview.</div>}
     </section>
     <section className="panel"><div className="panel-heading"><div><h2>{selected?.name ?? "Select a campaign"}</h2><p className="muted small">{selected ? `Current definition · version ${selected.current_version}` : "Campaign details will appear here."}</p></div></div>
       {selected && <div className="draft-detail"><p><strong>Goal:</strong> {selected.goal || "Not specified"}</p><p><strong>Baseline:</strong> {selected.baseline_start} – {selected.baseline_end}</p><p><strong>Comparison:</strong> {selected.comparison_start} – {selected.comparison_end}</p><p className="muted small">Dates use the client timezone, {client.timezone}.</p>
+        {canEdit && <details className="review-detail"><summary>Build a tagged Reddit landing link</summary>{(contributionOptions?.length ?? 0)>100 && <p className="muted small">Only the newest 100 contributions are available in the selector.</p>}<UtmBuilder campaignId={selected.id} defaultDestination={client.website ?? ""} contributions={contributionOptions?.slice(0,100) ?? []} /></details>}
         {canEdit && <details className="review-detail"><summary>Revise campaign windows or goal</summary><form action={reviseCampaign} className="form-grid"><input type="hidden" name="clientId" value={clientId} /><input type="hidden" name="campaignId" value={selected.id} /><input type="hidden" name="expectedVersion" value={selected.current_version} />
           <label>Name<input name="name" required maxLength={160} defaultValue={selected.name} /></label><label>Goal<input name="goal" maxLength={2000} defaultValue={selected.goal ?? ""} /></label>
           <label>Baseline start<input type="date" name="baselineStart" required defaultValue={selected.baseline_start} /></label><label>Baseline end<input type="date" name="baselineEnd" required defaultValue={selected.baseline_end} /></label>
