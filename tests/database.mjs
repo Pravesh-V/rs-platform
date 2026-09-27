@@ -43,6 +43,14 @@ assert.equal((await db.query('insert into public.clients(id,organization_id,name
 assert.deepEqual((await db.query('select name from public.clients order by name')).rows.map(row => row.name), ['A','B','New client']);
 await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
 await assert.rejects(db.query('insert into public.clients(organization_id,name) values ($1,$2) returning id', [org,'Denied client']));
+for (const rpcSignature of ['public.commit_reddit_import(uuid,uuid,text,text,jsonb)','public.record_contribution(uuid,uuid,text,text,text,text,text,text,timestamptz)']) {
+  assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed', ['anon',rpcSignature,'EXECUTE'])).rows[0].allowed,false,`${rpcSignature} should deny anonymous calls`);
+  assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed', ['authenticated',rpcSignature,'EXECUTE'])).rows[0].allowed,true,`${rpcSignature} should allow authenticated calls`);
+}
+for (const table of ['reddit_items','metric_snapshots','contributions','import_batches','audit_events']) {
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed', ['authenticated',`public.${table}`,'INSERT'])).rows[0].allowed,false,`${table} should require an RPC`);
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed', ['anon',`public.${table}`,'SELECT'])).rows[0].allowed,false,`${table} should not be visible anonymously`);
+}
 await db.exec(`set role anon`);
 await assert.rejects(db.query('select name from public.clients'));
 console.log('Basic role isolation and anonymous denial passed.');
