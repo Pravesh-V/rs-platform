@@ -49,4 +49,6 @@ A second rolled-back transaction used the same temporary researcher scope to rec
 
 The owner refreshed the signed-in `client 1` page and confirmed baseline views `100`, comparison views `140`, and matched-item change `+40`. The authenticated campaign export downloaded with HTTP 200. The saved CSV contained three observations, lifetime views `100` and `140`, a blank unknown-views cell, and the negative score `-2`.
 
+Two more live import checks ran under the owner's authenticated role in a rolled-back transaction. Reusing the existing idempotency key with different request content raised `Idempotency key was reused for different data`. A new batch attempting to change the existing baseline observation from 100 to 101 views raised `An existing observation has different values; review it as a correction`. Afterwards, `client 1` still had one batch and three observations, with zero batches for the rejected key.
+
 Still pending: signed-in CSV preview/commit, sign-out/sign-in persistence, and a separate researcher's browser/API isolation check. The synthetic records are development fixtures, never live Reddit evidence.
