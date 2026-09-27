@@ -22,6 +22,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927000400_manual
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000500_content_review.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000600_campaign_history.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000700_sentiment_review.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927000800_manual_ai_visibility.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -213,6 +214,49 @@ await assert.rejects(db.query(reviewDraftSql,[b,bDraftId,1,'submit',null]));
 for (const rpcSignature of ['public.revise_campaign(uuid,uuid,integer,text,text,date,date,date,date,text)','public.record_campaign_event(uuid,uuid,uuid,text,timestamp with time zone,text,text)']) {
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',rpcSignature,'EXECUTE'])).rows[0].allowed,false);
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['authenticated',rpcSignature,'EXECUTE'])).rows[0].allowed,true);
+}
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+const promptSet = '12121212-1212-4212-8212-121212121212';
+const promptId = '13131313-1313-4313-8313-131313131313';
+const answerId = '14141414-1414-4414-8414-141414141414';
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+await db.query('insert into public.ai_prompt_sets(id,client_id,name,version,language,region,planned_repeats,created_by) values($1,$2,$3,$4,$5,$6,$7,$8)',[promptSet,a,'Buyer questions',1,'en','US',3,researcher]);
+await assert.rejects(db.query('insert into public.ai_prompt_sets(id,client_id,name,version,language,region,planned_repeats,created_by) values($1,$2,$3,$4,$5,$6,$7,$8)',['15151515-1515-4515-8515-151515151515',b,'Denied',1,'en','US',3,researcher]));
+await db.query('insert into public.ai_prompts(id,client_id,prompt_set_id,ordinal,buyer_stage,branded,question,created_by) values($1,$2,$3,$4,$5,$6,$7,$8)',[promptId,a,promptSet,1,'discovery',false,'What tools solve this problem?',researcher]);
+const freezeSql = 'select public.freeze_ai_prompt_set($1,$2) as id';
+assert.equal((await db.query(freezeSql,[a,promptSet])).rows[0].id,promptSet);
+assert.equal((await db.query(freezeSql,[a,promptSet])).rows[0].id,promptSet);
+await assert.rejects(db.query('insert into public.ai_prompts(id,client_id,prompt_set_id,ordinal,buyer_stage,branded,question,created_by) values($1,$2,$3,$4,$5,$6,$7,$8)',['16161616-1616-4616-8616-161616161616',a,promptSet,2,'comparison',false,'Which alternative?',researcher]));
+const answerSql = 'select public.record_manual_ai_answer($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz,$12,$13,$14,$15,$16::jsonb) as id';
+const citationJson = JSON.stringify(['https://www.reddit.com/r/tools/comments/abc123/','https://example.com/source']);
+const answerArgs = [answerId,a,promptSet,promptId,'2026-09 baseline','Example provider','Example model','manual_consumer','English, US, search on',1,'2026-09-20T12:00:00Z','valid','An example answer with source links.',null,'Synthetic manual sample',citationJson];
+assert.equal((await db.query(answerSql,answerArgs)).rows[0].id,answerId);
+assert.equal((await db.query(answerSql,answerArgs)).rows[0].id,answerId);
+await assert.rejects(db.query(answerSql,[...answerArgs.slice(0,12),'Changed answer',...answerArgs.slice(13)]));
+await assert.rejects(db.query(answerSql,['17171717-1717-4717-8717-171717171717',...answerArgs.slice(1)]));
+await assert.rejects(db.query(answerSql,['18181818-1818-4818-8818-181818181818',b,...answerArgs.slice(2)]));
+await assert.rejects(db.query('insert into public.ai_answer_runs(id,client_id,prompt_set_id,prompt_id,wave_label,provider,model_label,collection_method,config_note,repeat_no,observed_at,outcome,answer_text,source_note,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',[answerId,a,promptSet,promptId,'other','X','Y','manual_consumer','Z',2,'2026-09-21T00:00:00Z','valid','No','Synthetic test',researcher]));
+assert.equal((await db.query('select count(*)::int as count from public.ai_citations where run_id=$1',[answerId])).rows[0].count,2);
+const reviewAnswerSql = 'select public.review_ai_answer($1,$2,$3,$4,$5,$6) as version';
+await assert.rejects(db.query(reviewAnswerSql,[a,answerId,0,true,true,'Researcher should not approve']));
+await db.exec(`set request.jwt.claim.sub = '${manager}'`);
+await assert.rejects(db.query(reviewAnswerSql,[a,answerId,0,false,true,'Recommendation implies mention']));
+assert.equal((await db.query(reviewAnswerSql,[a,answerId,0,true,false,'Client named but not recommended'])).rows[0].version,1);
+assert.equal((await db.query(reviewAnswerSql,[a,answerId,0,true,false,'Client named but not recommended'])).rows[0].version,1);
+assert.equal((await db.query(reviewAnswerSql,[a,answerId,1,true,true,'Explicit recommendation verified'])).rows[0].version,2);
+assert.equal((await db.query('select count(*)::int as count from public.ai_answer_reviews where run_id=$1',[answerId])).rows[0].count,2);
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+const bSet = '19191919-1919-4919-8919-191919191919';
+await db.query('insert into public.ai_prompt_sets(id,client_id,name,version,language,region,planned_repeats,created_by) values($1,$2,$3,$4,$5,$6,$7,$8)',[bSet,b,'Private B prompts',1,'en','US',1,owner]);
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+assert.equal((await db.query('select count(*)::int as count from public.ai_prompt_sets where client_id=$1',[b])).rows[0].count,0);
+assert.equal((await db.query('select count(*)::int as count from public.ai_answer_runs where client_id=$1',[b])).rows[0].count,0);
+for (const table of ['ai_answer_runs','ai_citations','ai_answer_reviews']) {
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['authenticated',`public.${table}`,'INSERT'])).rows[0].allowed,false);
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['anon',`public.${table}`,'SELECT'])).rows[0].allowed,false);
+}
+for (const signature of ['public.freeze_ai_prompt_set(uuid,uuid)','public.record_manual_ai_answer(uuid,uuid,uuid,uuid,text,text,text,text,text,integer,timestamp with time zone,text,text,text,text,jsonb)','public.review_ai_answer(uuid,uuid,integer,boolean,boolean,text)']) {
+  assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',signature,'EXECUTE'])).rows[0].allowed,false);
 }
 await db.exec(`set request.jwt.claim.sub = '${owner}'`);
 console.log('RPC access, two-period evidence, idempotency and conflict checks passed.');
