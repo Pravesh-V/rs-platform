@@ -45,6 +45,6 @@ Project: `rs-platform-dev` (`dhvmgwunrcdzjgbpgrjp`). The owner signed in and cre
 
 A rolled-back live transaction temporarily gave the owner identity researcher access to `client 1` only. Under that role, the database returned one visible client, zero visibility of Test B and three visible observations. A follow-up query confirmed the owner role was restored and no temporary grant remained. This exercises the live RLS rules but does not replace a separate Auth-user/browser denial test.
 
-The owner refreshed the signed-in `client 1` page and confirmed baseline views `100`, comparison views `140`, and matched-item change `+40`.
+The owner refreshed the signed-in `client 1` page and confirmed baseline views `100`, comparison views `140`, and matched-item change `+40`. The authenticated campaign export downloaded with HTTP 200. The saved CSV contained three observations, lifetime views `100` and `140`, a blank unknown-views cell, and the negative score `-2`.
 
-Still pending: signed-in CSV preview/commit, authenticated CSV download, sign-out/sign-in persistence, and a separate researcher's browser/API isolation check. The synthetic records are development fixtures, never live Reddit evidence.
+Still pending: signed-in CSV preview/commit, sign-out/sign-in persistence, and a separate researcher's browser/API isolation check. The synthetic records are development fixtures, never live Reddit evidence.
