@@ -38,3 +38,13 @@ Run this only against an isolated development Supabase project after applying th
 - Confirm every application table has RLS enabled, anonymous table access is unavailable, and direct authenticated inserts into `reddit_items`, `metric_snapshots`, `contributions`, `import_batches`, and `audit_events` are denied. The two authorized RPCs must remain callable only by authenticated users with the relevant client role.
 - Check the import batch and audit event against the committed rows. Invalid or conflicting batches must leave no partial records.
 - Record any failing query and fix the policy or permission before adding live collectors or declaring this milestone complete.
+
+## Development run, 27 September 2026
+
+Project: `rs-platform-dev` (`dhvmgwunrcdzjgbpgrjp`). The owner signed in and created `client 1` through the app. A second explicitly fictional client, `ReddSphere Test B`, and distinct comparison campaigns were inserted under the owner's authenticated database role. The labelled synthetic fixture was committed through `commit_reddit_import` for `client 1`: 2 items, 3 observations, 1 unknown-view observation and 1 batch. Repeating the same request and idempotency key returned the same batch ID; Test B retained zero evidence.
+
+A rolled-back live transaction temporarily gave the owner identity researcher access to `client 1` only. Under that role, the database returned one visible client, zero visibility of Test B and three visible observations. A follow-up query confirmed the owner role was restored and no temporary grant remained. This exercises the live RLS rules but does not replace a separate Auth-user/browser denial test.
+
+The owner refreshed the signed-in `client 1` page and confirmed baseline views `100`, comparison views `140`, and matched-item change `+40`.
+
+Still pending: signed-in CSV preview/commit, authenticated CSV download, sign-out/sign-in persistence, and a separate researcher's browser/API isolation check. The synthetic records are development fixtures, never live Reddit evidence.
