@@ -51,4 +51,6 @@ The owner refreshed the signed-in `client 1` page and confirmed baseline views `
 
 Two more live import checks ran under the owner's authenticated role in a rolled-back transaction. Reusing the existing idempotency key with different request content raised `Idempotency key was reused for different data`. A new batch attempting to change the existing baseline observation from 100 to 101 views raised `An existing observation has different values; review it as a correction`. Afterwards, `client 1` still had one batch and three observations, with zero batches for the rejected key.
 
+The fact-review migration was applied to the development project. A rolled-back owner transaction created a synthetic fact, approved it twice with the same note, and confirmed one review audit event. No test fact remained. Live privilege inspection found explicit `anon` EXECUTE grants on all three public RPCs despite their earlier PUBLIC revocations; the follow-up migration removed those grants. All three now report `anon` denied and `authenticated` allowed.
+
 Still pending: signed-in CSV preview/commit, sign-out/sign-in persistence, and a separate researcher's browser/API isolation check. The synthetic records are development fixtures, never live Reddit evidence.

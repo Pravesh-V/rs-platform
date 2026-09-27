@@ -51,6 +51,22 @@ export async function createFact(form: FormData) {
   redirect(`/clients/${clientId}#facts`);
 }
 
+export async function reviewFact(form: FormData) {
+  const clientId = String(form.get("clientId") ?? "");
+  const input = z.object({ clientId: uuid, factId: uuid, status: z.enum(["approved","rejected","stale"]), note: z.string().trim().max(1000) }).safeParse({
+    clientId, factId: form.get("factId"), status: form.get("status"), note: form.get("note") ?? "",
+  });
+  if (!input.success) redirect(`/clients/${clientId}?error=Check%20the%20fact%20review`);
+  const { db, role } = await requireClient(clientId);
+  if (!["owner","manager"].includes(role)) redirect(`/clients/${clientId}?error=Review%20access%20required`);
+  const { error } = await db.rpc("review_client_fact", {
+    p_client_id: clientId, p_fact_id: input.data.factId, p_status: input.data.status, p_note: input.data.note || null,
+  });
+  if (error) redirect(`/clients/${clientId}?error=${queryError(error.message)}`);
+  revalidatePath(`/clients/${clientId}`);
+  redirect(`/clients/${clientId}#facts`);
+}
+
 export async function createCampaign(form: FormData) {
   const clientId = String(form.get("clientId") ?? "");
   const input = z.object({ clientId: uuid, name: z.string().trim().min(1).max(160), goal: z.string().trim().max(2000), baselineStart: z.iso.date(), baselineEnd: z.iso.date(), comparisonStart: z.iso.date(), comparisonEnd: z.iso.date() }).safeParse({

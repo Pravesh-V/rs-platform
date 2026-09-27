@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createCampaign, createFact, recordContribution } from "@/app/actions/records";
+import { createCampaign, createFact, recordContribution, reviewFact } from "@/app/actions/records";
 import { Shell } from "@/components/shell";
 import { requireClient } from "@/lib/auth";
 import { evidence, periodBounds } from "@/lib/data";
@@ -13,7 +13,7 @@ export default async function ClientOverview({ params, searchParams }: { params:
   const { db, client, role } = await requireClient(clientId);
   const filters = await searchParams;
   const [{ data: facts, error: factsError }, { data: campaigns, error: campaignsError }, { data: contributions, error: contributionError }] = await Promise.all([
-    db.from("client_facts").select("id,kind,statement,source_url,review_status,verified_at").eq("client_id",clientId).order("created_at",{ ascending:false }).limit(100),
+    db.from("client_facts").select("id,kind,statement,source_url,review_status,verified_at,review_note,reviewed_at").eq("client_id",clientId).order("created_at",{ ascending:false }).limit(100),
     db.from("campaigns").select("id,name,goal,baseline_start,baseline_end,comparison_start,comparison_end").eq("client_id",clientId).order("created_at",{ ascending:false }),
     db.from("contributions").select("id,item_id,format,published_at,campaign_id,verification_status").eq("client_id",clientId).order("published_at",{ ascending:false }).limit(50),
   ]);
@@ -41,6 +41,7 @@ export default async function ClientOverview({ params, searchParams }: { params:
     } catch (error) { boundsError = error instanceof Error ? error.message : "Invalid date range."; }
   }
   const canEdit = ["owner","manager","researcher"].includes(role);
+  const canReview = ["owner","manager"].includes(role);
   const canContribute = canEdit || role === "writer";
   return <Shell clientId={clientId} clientName={client.name}>
     <div className="page-heading"><div><div className="eyebrow">CLIENT WORKSPACE</div><h1>{client.name}</h1><p className="muted">Baseline, activity and evidence for this client.</p></div><Link className="button primary" href={`/clients/${clientId}/imports`}>Import evidence</Link></div>
@@ -58,7 +59,18 @@ export default async function ClientOverview({ params, searchParams }: { params:
     </section>
 
     <div className="two-column"><section className="panel" id="facts"><div className="panel-heading"><h2>Company knowledge</h2><span className="muted small">{facts?.length ?? 0} facts</span></div>
-      {facts?.length ? <div className="record-list">{facts.map((fact) => <div key={fact.id} className="record"><span className="tag">{fact.kind.replaceAll("_"," ")}</span><p>{fact.statement}</p><div className="muted small">{fact.review_status} · Verified {fact.verified_at ?? "not yet"}{fact.source_url && <> · <a href={fact.source_url} target="_blank" rel="noreferrer">Source ↗</a></>}</div></div>)}</div> : <div className="empty compact">No company facts recorded.</div>}
+      {facts?.length ? <div className="record-list">{facts.map((fact) => <div key={fact.id} className="record">
+        <span className="tag">{fact.kind.replaceAll("_"," ")}</span>
+        <p>{fact.statement}</p>
+        <div className="muted small">{fact.review_status} · Submitted verification date {fact.verified_at ?? "not supplied"}{fact.source_url && <> · <a href={fact.source_url} target="_blank" rel="noreferrer">Source ↗</a></>}</div>
+        {fact.reviewed_at && <div className="muted small">Reviewed {timestamp(fact.reviewed_at)}{fact.review_note && <> · {fact.review_note}</>}</div>}
+        {canReview && <details className="review-detail"><summary>Review fact</summary><form action={reviewFact} className="stack">
+          <input type="hidden" name="clientId" value={clientId} /><input type="hidden" name="factId" value={fact.id} />
+          <label>Decision<select name="status" defaultValue={fact.review_status === "pending" ? "approved" : fact.review_status}><option value="approved">Approve</option><option value="rejected">Reject</option><option value="stale">Mark stale</option></select></label>
+          <label>Review note<textarea name="note" maxLength={1000} rows={2} defaultValue={fact.review_note ?? ""} placeholder="Reason or source check" /></label>
+          <button className="button secondary">Save review</button>
+        </form></details>}
+      </div>)}</div> : <div className="empty compact">No company facts recorded.</div>}
       {canEdit && <details className="add-detail"><summary>Add company fact</summary><form action={createFact} className="stack"><input type="hidden" name="clientId" value={clientId} /><label>Type<select name="kind">{["product","alias","positioning","customer","differentiator","pricing","prohibited_claim","tone","objective","other"].map((kind) => <option value={kind} key={kind}>{kind.replaceAll("_"," ")}</option>)}</select></label><label>Statement<textarea name="statement" required maxLength={5000} rows={3} /></label><label>Source URL<input name="sourceUrl" type="url" placeholder="https://..." /></label><label>Verified on<input name="verifiedAt" type="date" /></label><button className="button primary">Save fact for review</button></form></details>}
     </section><section className="panel" id="contributions"><div className="panel-heading"><h2>Recorded contributions</h2><span className="muted small">User-reported publication URLs</span></div>
       {contributions?.length ? <div className="record-list">{contributions.map((contribution) => { const item=dataset?.items.find((entry) => entry.id===contribution.item_id); return <div key={contribution.id} className="record"><div><span className="tag">{contribution.format}</span> <strong>{item ? `r/${item.subreddit}` : "Reddit item"}</strong></div><div className="muted small">Reported published {timestamp(contribution.published_at)} · {contribution.verification_status.replaceAll("_"," ")}{item && <> · <a href={item.canonical_url} target="_blank" rel="noreferrer">Open on Reddit ↗</a></>}</div></div>; })}</div> : <div className="empty compact">No publications recorded. Approval alone never creates a contribution.</div>}
