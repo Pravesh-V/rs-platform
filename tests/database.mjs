@@ -24,6 +24,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927000600_campai
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000700_sentiment_review.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000800_manual_ai_visibility.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927000900_report_snapshots.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260927001000_manual_search_visibility.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -291,6 +292,31 @@ for (const signature of ['public.create_report_snapshot(uuid,uuid,uuid,date,text
   assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon',signature,'EXECUTE'])).rows[0].allowed,false);
 }
 assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['authenticated','public.report_snapshots','INSERT'])).rows[0].allowed,false);
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+const searchSet = '25252525-2525-4252-8252-252525252525';
+const keyword = '26262626-2626-4262-8262-262626262626';
+const searchObservation = '27272727-2727-4272-8272-272727272727';
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+await db.query('insert into public.search_sets(id,client_id,name,version,engine,region,language,device,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[searchSet,a,'Discovery terms',1,'Google Search','US','en','desktop',researcher]);
+await assert.rejects(db.query('insert into public.search_sets(id,client_id,name,version,engine,region,language,device,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',['28282828-2828-4282-8282-282828282828',b,'Denied',1,'Google Search','US','en','desktop',researcher]));
+await db.query('insert into public.search_keywords(id,client_id,set_id,ordinal,phrase,created_by) values($1,$2,$3,$4,$5,$6)',[keyword,a,searchSet,1,'best example tools',researcher]);
+await assert.rejects(db.query('insert into public.search_observations(id,client_id,set_id,keyword_id,wave_label,observed_at,source_provider,sampling_method,result_type,outcome,rank,ranking_url,source_note,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',[searchObservation,a,searchSet,keyword,'baseline','2026-09-20T12:00:00Z','Manual browser','manual_serp','organic','present',3,'https://www.reddit.com/r/tools/comments/abc123/','Synthetic fixture',researcher]));
+const freezeSearchSql = 'select public.freeze_search_set($1,$2) as id';
+assert.equal((await db.query(freezeSearchSql,[a,searchSet])).rows[0].id,searchSet);
+assert.equal((await db.query(freezeSearchSql,[a,searchSet])).rows[0].id,searchSet);
+await assert.rejects(db.query('insert into public.search_keywords(id,client_id,set_id,ordinal,phrase,created_by) values($1,$2,$3,$4,$5,$6)',['29292929-2929-4292-8292-292929292929',a,searchSet,2,'another term',researcher]));
+await db.query('insert into public.search_observations(id,client_id,set_id,keyword_id,wave_label,observed_at,source_provider,sampling_method,result_type,outcome,rank,ranking_url,source_note,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',[searchObservation,a,searchSet,keyword,'baseline','2026-09-20T12:00:00Z','Manual browser','manual_serp','organic','present',3,'https://www.reddit.com/r/tools/comments/abc123/','Synthetic fixture',researcher]);
+await assert.rejects(db.query('insert into public.search_observations(id,client_id,set_id,keyword_id,wave_label,observed_at,source_provider,sampling_method,result_type,outcome,rank,ranking_url,source_note,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',['30303030-3030-4303-8303-303030303030',b,searchSet,keyword,'baseline','2026-09-20T12:00:00Z','Manual browser','manual_serp','organic','present',3,'https://example.com/','Synthetic fixture',researcher]));
+await assert.rejects(db.query('insert into public.search_observations(id,client_id,set_id,keyword_id,wave_label,observed_at,source_provider,sampling_method,result_type,outcome,rank,ranking_url,source_note,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',['31313131-3131-4313-8313-313131313131',a,searchSet,keyword,'baseline','2026-09-20T12:00:00Z','Manual browser','manual_serp','organic','present',null,null,'Synthetic fixture',researcher]));
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+await db.query('insert into public.search_sets(id,client_id,name,version,engine,region,language,device,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',['32323232-3232-4323-8323-323232323232',b,'Private B terms',1,'Google Search','US','en','desktop',owner]);
+await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
+assert.equal((await db.query('select count(*)::int as count from public.search_sets where client_id=$1',[b])).rows[0].count,0);
+assert.equal((await db.query('select count(*)::int as count from public.search_observations where client_id=$1',[b])).rows[0].count,0);
+assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon','public.freeze_search_set(uuid,uuid)','EXECUTE'])).rows[0].allowed,false);
+for (const table of ['search_sets','search_keywords','search_observations']) {
+  assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['anon',`public.${table}`,'SELECT'])).rows[0].allowed,false);
+}
 await db.exec(`set request.jwt.claim.sub = '${owner}'`);
 console.log('RPC access, two-period evidence, idempotency and conflict checks passed.');
 const saved = await db.dumpDataDir();

@@ -32,6 +32,8 @@ Required example: 2/20 to 10/20 = 10% to 50%, eight additional qualifying answer
 
 Manual AI rates are exposed for saved, reviewed cohorts only. Automated provider collection, citation verification, search metrics, and multi-source published reports are **not yet implemented**. Their calculation versions, classification rules, exclusions, model/configuration hashes, and report datasets must be frozen with approved reports.
 
+Manual search observations are displayed as individual records, with no aggregate rank or AI-summary exposure rate yet. A `not_found` row describes only its documented sampled scope; a missing row means no observation. Keyword set version, engine, region, language, device, wave and collection method must match before a trend is calculated. Ordinary rankings, AI summaries and advertisements are separate result types.
+
 ## Internal report snapshot
 
 `reddit-lifetime-v1` is calculated in Postgres from the campaign's current version and client timezone when a report version is created. For each period, it saves the count of observations and observed items, the count of items with known views, and the sum of each item's latest recorded lifetime views. The matched change uses only items with known views in both periods. A missing known value remains `null`, rather than zero. The snapshot lists the exact observation and campaign-event IDs used, the date windows, timezone, campaign version, calculation version, and SHA-256 checksum. Approval freezes that version; a correction creates another. The internal report covers only campaign-linked Reddit observations. Its narrative requires human review and must describe missing sources and uncertainty. PDF and client publication remain unimplemented.
