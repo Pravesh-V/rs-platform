@@ -19,7 +19,7 @@ Definition version 0.2, implemented foundation and manual-review subset. These a
 - Planned observations = prompts in the frozen set × planned repeats. Attempted observations include valid answers, refusals, and errors. The app shows each count separately; missing and refused answers are not quietly treated as valid answers.
 - AI mention rate = valid answers labelled as mentioning the client by a human / all valid answers in the cohort. Recommendation rate uses the same denominator and the human recommendation label. Both rates are withheld until every valid answer in the displayed cohort has a review; a zero-valid-answer cohort has an undefined rate.
 - Reddit source rate = valid answers with at least one user-supplied HTTPS Reddit/redd.it citation URL / all valid answers. Multiple Reddit URLs in one answer count once. A URL is not proof that the provider generated the citation or cited an agency comment.
-- The newest review version determines each answer's labels. Review corrections preserve older versions. The UI caps the displayed run sample and blocks summary calculations when it cannot load the entire cohort.
+- The newest review version determines each answer's labels. Review corrections preserve older versions. The UI uses exact row counts to detect API truncation and blocks summary calculations when it cannot load all runs, citations or reviews in the selected cohort.
 
 ## Next metric modules
 

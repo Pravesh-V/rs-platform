@@ -22,26 +22,28 @@ export default async function AiVisibility({ params, searchParams }: {
   const { clientId } = await params;
   const filters = await searchParams;
   const { db, client, role } = await requireClient(clientId);
-  const { data: sets, error: setsError } = await retryIdempotentRequest(async () => db.from("ai_prompt_sets")
-    .select("id,name,version,language,region,planned_repeats,status,frozen_at,created_at")
+  const { data: sets, count: setCount, error: setsError } = await retryIdempotentRequest(async () => db.from("ai_prompt_sets")
+    .select("id,name,version,language,region,planned_repeats,status,frozen_at,created_at",{count:"exact"})
     .eq("client_id", clientId).order("created_at", { ascending: false }).limit(100));
   const selectedSet = sets?.find((set) => set.id === filters.set) ?? sets?.[0];
-  const [{ data: prompts, error: promptsError }, { data: allRuns, error: runsError }] = selectedSet ? await Promise.all([
+  const [{ data: prompts, error: promptsError }, { data: allRuns, count: runCount, error: runsError }] = selectedSet ? await Promise.all([
     retryIdempotentRequest(async () => db.from("ai_prompts").select("id,ordinal,buyer_stage,branded,question").eq("client_id",clientId).eq("prompt_set_id",selectedSet.id).order("ordinal").limit(101)),
-    retryIdempotentRequest(async () => db.from("ai_answer_runs").select("id,prompt_id,wave_label,provider,model_label,collection_method,config_note,repeat_no,observed_at,outcome,answer_text,error_note,source_note")
-      .eq("client_id",clientId).eq("prompt_set_id",selectedSet.id).order("observed_at",{ ascending:false }).limit(501)),
-  ]) : [{ data: [], error: null }, { data: [], error: null }];
+    retryIdempotentRequest(async () => db.from("ai_answer_runs").select("id,prompt_id,wave_label,provider,model_label,collection_method,config_note,repeat_no,observed_at,outcome,answer_text,error_note,source_note",{count:"exact"})
+      .eq("client_id",clientId).eq("prompt_set_id",selectedSet.id).order("observed_at",{ ascending:false }).limit(500)),
+  ]) : [{ data: [], error: null }, { data: [], count: 0, error: null }];
   const runs = (allRuns ?? []) as Run[];
   const cohorts = [...new Set(runs.map(keyFor))];
   const selectedCohort = cohorts.includes(filters.cohort ?? "") ? filters.cohort! : cohorts[0];
   const cohortRuns = runs.filter((run) => keyFor(run) === selectedCohort);
   const runIds = cohortRuns.map((run) => run.id);
-  const capped = (prompts?.length ?? 0) > 100 || runs.length > 500 || cohortRuns.length > 100;
-  const [{ data: citations, error: citationsError }, { data: reviews, error: reviewsError }] = runIds.length && !capped ? await Promise.all([
-    retryIdempotentRequest(async () => db.from("ai_citations").select("id,run_id,ordinal,url").eq("client_id",clientId).in("run_id",runIds).order("ordinal").limit(2001)),
-    retryIdempotentRequest(async () => db.from("ai_answer_reviews").select("id,run_id,version,mentions_client,recommends_client,review_note,reviewed_at").eq("client_id",clientId).in("run_id",runIds).order("version",{ ascending:false }).limit(1001)),
-  ]) : [{ data: [], error: null }, { data: [], error: null }];
-  const historyCapped = (citations?.length ?? 0) > 2000 || (reviews?.length ?? 0) > 1000;
+  const setsCapped = setCount !== null && setCount > (sets?.length ?? 0);
+  const capped = (prompts?.length ?? 0) > 100 || (runCount !== null && runCount > runs.length) || cohortRuns.length > 100;
+  const [{ data: citations, count: citationCount, error: citationsError }, { data: reviews, count: reviewCount, error: reviewsError }] = runIds.length && !capped ? await Promise.all([
+    retryIdempotentRequest(async () => db.from("ai_citations").select("id,run_id,ordinal,url",{count:"exact"}).eq("client_id",clientId).in("run_id",runIds).order("ordinal").limit(1000)),
+    retryIdempotentRequest(async () => db.from("ai_answer_reviews").select("id,run_id,version,mentions_client,recommends_client,review_note,reviewed_at",{count:"exact"}).eq("client_id",clientId).in("run_id",runIds).order("version",{ ascending:false }).limit(1000)),
+  ]) : [{ data: [], count: 0, error: null }, { data: [], count: 0, error: null }];
+  const historyCapped = (citationCount !== null && citationCount > (citations?.length ?? 0))
+    || (reviewCount !== null && reviewCount > (reviews?.length ?? 0));
   const complete = !capped && !historyCapped && !setsError && !promptsError && !runsError && !citationsError && !reviewsError;
   const summary = complete && selectedSet && prompts && citations && reviews
     ? summarizeAnswerCohort(prompts.length, selectedSet.planned_repeats, cohortRuns, reviews, citations) : null;
@@ -59,6 +61,7 @@ export default async function AiVisibility({ params, searchParams }: {
     <div className="notice warning"><strong>No AI provider is connected.</strong><p>Every result here must be entered from a source you are permitted to store. Provider, model, search mode, region and collection method are supplied labels, not verified API metadata. Consumer-interface samples are separate from API exports. A cited Reddit thread is not proof that an agency comment was used.</p></div>
     {filters.error && <div className="notice error" role="alert">{filters.error}</div>}
     {loadError && <div className="notice error" role="alert">Some AI evidence could not load. Refresh to retry. {loadError.message}</div>}
+    {setsCapped && <div className="notice warning">Showing the newest 100 prompt sets. Older set versions need pagination.</div>}
     {(capped || historyCapped) && <div className="notice warning">This set exceeds the current safe display limit. Rates are paused rather than calculated from partial records.</div>}
 
     {canEdit && <section className="panel"><div className="panel-heading"><div><h2>Create a prompt set version</h2><p className="muted small">Freeze a set before recording runs. New questions or settings require a new version.</p></div></div>
