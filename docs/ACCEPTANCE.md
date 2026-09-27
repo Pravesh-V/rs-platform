@@ -16,7 +16,7 @@ Run this only against an isolated development Supabase project after applying th
    values ('CLIENT-A-UUID'::uuid,'ORG-UUID'::uuid,'RESEARCHER-USER-UUID'::uuid,'researcher');
    ```
 
-4. Prepare authorized CSV observations with two timestamps for the same Reddit item, one in each campaign period, plus a row with blank `views`. Use a source note that records permission and collection context. Use only records you are permitted to store.
+4. Prepare authorized CSV observations with two timestamps for the same Reddit item, one in each campaign period, plus a row with blank `views`. The import form can assign rows with blank `campaign_id` cells to the selected campaign. Use a source note that records permission and collection context. Use only records you are permitted to store. Clearly labelled synthetic records are suitable for the development-only check, but are never live Reddit evidence.
 
 ## Owner flow
 

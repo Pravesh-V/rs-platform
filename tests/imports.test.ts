@@ -19,6 +19,14 @@ describe("evidence input and output", () => {
     expect(preview.errors.map((row) => row.line)).toEqual([3,4]);
   });
 
+  it("assigns blank campaign IDs and rejects a conflicting CSV campaign", () => {
+    const selected = "11111111-1111-4111-8111-111111111111";
+    const other = "22222222-2222-4222-8222-222222222222";
+    const csv = (campaignId: string) => `url,title,text,published_at,observed_at,views,score,replies,shares,affiliation,campaign_id\nhttps://reddit.com/r/tools/comments/abc123/example/,A,,2026-09-01T01:00:00Z,2026-09-02T01:00:00Z,100,7,,,independent,${campaignId}\n`;
+    expect(previewCsv(csv(""), selected).rows[0].campaign_id).toBe(selected);
+    expect(previewCsv(csv(other), selected).errors[0].message).toMatch(/differs from the selected campaign/);
+  });
+
   it("neutralizes formula cells in exported CSV", () => {
     expect(safeCell("=HYPERLINK(\"bad\")")).toBe('"\'=HYPERLINK(""bad"")"');
     expect(safeCell(" safe")).toBe('" safe"');

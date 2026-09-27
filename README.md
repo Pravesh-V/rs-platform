@@ -31,13 +31,13 @@ This checkout was created with Node 25.9, which produced an engine warning; buil
    ```
 
 5. Start the app: `npm run dev`. Open `http://localhost:3000`, sign in, and create two **fictional clients in the development project**.
-6. Add a campaign for each client. Import a permitted CSV with observations in two periods, or record a real published contribution. The import form links to a blank CSV template. Verify that unknown counters display as unknown and that a repeated import uses its existing batch ID.
+6. Add a campaign for each client. Import a permitted CSV with observations in two periods, or record a real published contribution. The import form links to a blank CSV template and can assign rows with blank `campaign_id` cells to a selected campaign. Verify that unknown counters display as unknown and that a repeated import uses its existing batch ID.
 
 Use a custom SMTP provider before inviting real users: Supabase’s default SMTP service is for exploration and sends only to authorized team addresses with a low rate limit. [Supabase SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
 
 ## CSV contract
 
-The template columns are `url,title,text,published_at,observed_at,views,score,replies,shares,affiliation,campaign_id`. One row represents a Reddit post or comment and one observation time. `url` must be an HTTPS Reddit post/comment URL with an item ID. Timestamps must be ISO 8601 with `Z` or a numeric offset; `observed_at` is required. Blank counters mean unknown. `views`, `replies`, and `shares` are non-negative integers; `score` may be negative. `affiliation` is one of `agency`, `brand`, `independent`, `paid_disclosed`, or `unknown`. The optional campaign ID must belong to the selected client.
+The template columns are `url,title,text,published_at,observed_at,views,score,replies,shares,affiliation,campaign_id`. One row represents a Reddit post or comment and one observation time. `url` must be an HTTPS Reddit post/comment URL with an item ID. Timestamps must be ISO 8601 with `Z` or a numeric offset; `observed_at` is required. Blank counters mean unknown. `views`, `replies`, and `shares` are non-negative integers; `score` may be negative. `affiliation` is one of `agency`, `brand`, `independent`, `paid_disclosed`, or `unknown`. The optional campaign ID must belong to the selected client. Selecting a campaign in the import form fills blank campaign IDs; a different ID already present in the CSV is rejected.
 
 The source note records where permissioned data came from. The import preview rejects invalid rows, and a commit with any invalid row is blocked. The database commit is atomic, uses an idempotency key, retains content revisions, and rejects conflicting item metadata or a conflicting value for the same item/observation rather than silently replacing it. Reusing an idempotency key with different content is rejected. A URL import never fetches its text.
 

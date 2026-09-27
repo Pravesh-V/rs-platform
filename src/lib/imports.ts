@@ -23,8 +23,9 @@ export type ImportRow = {
 
 export type Preview = { rows: ImportRow[]; errors: { line: number; message: string }[] };
 
-export function previewCsv(input: string): Preview {
+export function previewCsv(input: string, assignedCampaignId = ""): Preview {
   if (new TextEncoder().encode(input).length > 1_000_000) throw new Error("Use a CSV smaller than 1 MB.");
+  if (assignedCampaignId && !z.string().uuid().safeParse(assignedCampaignId).success) throw new Error("Invalid campaign selection.");
   let records: Record<string, string>[];
   try {
     records = parse(input, { columns: true, bom: true, skip_empty_lines: true, trim: true, relax_quotes: false, skip_records_with_error: false });
@@ -44,6 +45,7 @@ export function previewCsv(input: string): Preview {
       if (!["agency", "brand", "independent", "paid_disclosed", "unknown"].includes(affiliation)) throw new Error("Invalid affiliation.");
       if (record.title?.length > 500 || record.text?.length > 20000) throw new Error("Text field exceeds size limit.");
       if (record.campaign_id && !z.string().uuid().safeParse(record.campaign_id).success) throw new Error("Campaign ID must be a UUID.");
+      if (assignedCampaignId && record.campaign_id && record.campaign_id !== assignedCampaignId) throw new Error("CSV campaign ID differs from the selected campaign.");
       const observedAt = parseTimestamp(record.observed_at);
       const publishedAt = record.published_at ? parseTimestamp(record.published_at) : null;
       if (publishedAt && observedAt < publishedAt) throw new Error("Observation cannot precede publication.");
@@ -61,7 +63,7 @@ export function previewCsv(input: string): Preview {
         replies: parseNullableInteger(record.replies ?? ""),
         shares: parseNullableInteger(record.shares ?? ""),
         affiliation,
-        campaign_id: record.campaign_id || null,
+        campaign_id: assignedCampaignId || record.campaign_id || null,
       };
       const key = `${row.external_id}|${row.observed_at}`;
       if (seen.has(key)) throw new Error("Duplicate item and observation time in this file.");

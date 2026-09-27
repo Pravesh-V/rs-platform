@@ -4,15 +4,19 @@ import { revalidatePath } from "next/cache";
 import { requireClient } from "@/lib/auth";
 import { previewCsv } from "@/lib/imports";
 
-export async function commitImport(clientId: string, csv: string, fileName: string, sourceNote: string, idempotencyKey: string) {
+export async function commitImport(clientId: string, csv: string, fileName: string, sourceNote: string, idempotencyKey: string, assignedCampaignId: string) {
   try {
     if (!/^[0-9a-f-]{36}$/i.test(clientId) || !/^[0-9a-f-]{36}$/i.test(idempotencyKey)) throw new Error("Invalid request identifier.");
     if (fileName.length > 200 || !sourceNote.trim() || sourceNote.length > 1000) throw new Error("Add a source note and valid file name.");
-    const preview = previewCsv(csv);
-    if (preview.errors.length) throw new Error("Resolve all row errors before importing.");
-    if (!preview.rows.length) throw new Error("The file has no data rows.");
     const { db, role } = await requireClient(clientId);
     if (!["owner","manager","researcher"].includes(role)) throw new Error("Import access required.");
+    if (assignedCampaignId) {
+      const { data: campaign, error: campaignError } = await db.from("campaigns").select("id").eq("client_id", clientId).eq("id", assignedCampaignId).maybeSingle();
+      if (campaignError || !campaign) throw new Error("Selected campaign is not available for this client.");
+    }
+    const preview = previewCsv(csv, assignedCampaignId);
+    if (preview.errors.length) throw new Error("Resolve all row errors before importing.");
+    if (!preview.rows.length) throw new Error("The file has no data rows.");
     const { data, error } = await db.rpc("commit_reddit_import", {
       p_client_id: clientId, p_idempotency_key: idempotencyKey, p_file_name: fileName, p_source_note: sourceNote, p_rows: preview.rows,
     });
