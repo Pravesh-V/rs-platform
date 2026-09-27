@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireClient } from "@/lib/auth";
 import { previewCsv } from "@/lib/imports";
+import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 
 export async function commitImport(clientId: string, csv: string, fileName: string, sourceNote: string, idempotencyKey: string, assignedCampaignId: string) {
   try {
@@ -17,9 +18,9 @@ export async function commitImport(clientId: string, csv: string, fileName: stri
     const preview = previewCsv(csv, assignedCampaignId);
     if (preview.errors.length) throw new Error("Resolve all row errors before importing.");
     if (!preview.rows.length) throw new Error("The file has no data rows.");
-    const { data, error } = await db.rpc("commit_reddit_import", {
+    const { data, error } = await retryIdempotentRequest(async () => db.rpc("commit_reddit_import", {
       p_client_id: clientId, p_idempotency_key: idempotencyKey, p_file_name: fileName, p_source_note: sourceNote, p_rows: preview.rows,
-    });
+    }));
     if (error || !data) throw new Error(error?.message ?? "Import failed.");
     revalidatePath(`/clients/${clientId}`);
     revalidatePath(`/clients/${clientId}/imports`);

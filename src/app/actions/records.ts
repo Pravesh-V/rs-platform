@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireClient, requireUser } from "@/lib/auth";
-import { clientCreateError, insertWithStableId } from "@/lib/idempotent-insert";
+import { clientCreateError, insertWithStableId, isConnectionFailure } from "@/lib/idempotent-insert";
 import { parseRedditUrl, parseTimestamp } from "@/lib/reddit";
 
 const uuid = z.string().uuid();
@@ -59,8 +59,13 @@ export async function createCampaign(form: FormData) {
   if (!input.success || input.data.baselineStart > input.data.baselineEnd || input.data.baselineEnd >= input.data.comparisonStart || input.data.comparisonStart > input.data.comparisonEnd) redirect(`/clients/${clientId}?error=Check%20the%20campaign%20dates`);
   const { db, role } = await requireClient(clientId);
   if (!["owner","manager","researcher"].includes(role)) redirect(`/clients/${clientId}?error=Edit%20access%20required`);
-  const { error } = await db.from("campaigns").insert({ client_id: clientId, name: input.data.name, goal: input.data.goal || null, baseline_start: input.data.baselineStart, baseline_end: input.data.baselineEnd, comparison_start: input.data.comparisonStart, comparison_end: input.data.comparisonEnd });
-  if (error) redirect(`/clients/${clientId}?error=${queryError(error.message)}`);
+  const id = randomUUID();
+  const { data, error } = await insertWithStableId(
+    id,
+    async () => db.from("campaigns").insert({ id, client_id: clientId, name: input.data.name, goal: input.data.goal || null, baseline_start: input.data.baselineStart, baseline_end: input.data.baselineEnd, comparison_start: input.data.comparisonStart, comparison_end: input.data.comparisonEnd }).select("id").single(),
+    async () => db.from("campaigns").select("id").eq("id", id).eq("client_id", clientId).maybeSingle(),
+  );
+  if (error || !data) redirect(`/clients/${clientId}?error=${queryError(isConnectionFailure(error) ? "Database connection interrupted. Check campaigns before trying again." : error?.message ?? "Could not create campaign")}`);
   revalidatePath(`/clients/${clientId}`);
   redirect(`/clients/${clientId}#campaigns`);
 }

@@ -2,7 +2,7 @@ type QueryError = { code?: string; message: string };
 
 export type InsertResult<T> = { data: T | null; error: QueryError | null };
 
-function isConnectionFailure(error: QueryError | null) {
+export function isConnectionFailure(error: QueryError | null) {
   return Boolean(error && /fetch failed|ECONNRESET|ETIMEDOUT|socket hang up/i.test(error.message));
 }
 
@@ -35,4 +35,15 @@ export function clientCreateError(error: QueryError | null) {
   return isConnectionFailure(error)
     ? "Database connection interrupted. Check the client list before trying again."
     : error?.message ?? "Could not create client";
+}
+
+export async function retryIdempotentRequest<T extends { error: QueryError | null }>(
+  request: () => Promise<T>,
+): Promise<T> {
+  let result = await request();
+  for (let attempt = 0; attempt < 2 && isConnectionFailure(result.error); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
+    result = await request();
+  }
+  return result;
 }

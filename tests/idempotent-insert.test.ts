@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { clientCreateError, insertWithStableId } from "../src/lib/idempotent-insert";
+import { clientCreateError, insertWithStableId, retryIdempotentRequest } from "../src/lib/idempotent-insert";
 
 const id = "11111111-1111-4111-8111-111111111111";
 const failed = { data: null, error: { code: "", message: "TypeError: fetch failed" } };
@@ -32,5 +32,11 @@ describe("client creation after a lost database response", () => {
     expect(await insertWithStableId(id, insert, vi.fn())).toEqual(failed);
     expect(insert).toHaveBeenCalledTimes(3);
     expect(clientCreateError(failed.error)).toMatch(/Check the client list/);
+  });
+
+  it("retries an idempotency-keyed import after a connection reset", async () => {
+    const request = vi.fn().mockResolvedValueOnce(failed).mockResolvedValueOnce({ data: "batch-id", error: null });
+    expect(await retryIdempotentRequest(request)).toEqual({ data: "batch-id", error: null });
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });
