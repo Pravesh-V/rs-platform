@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DateTime } from "luxon";
 import { approveReportSnapshot, createReportSnapshot } from "@/app/actions/reports";
 import { Shell } from "@/components/shell";
 import { requireClient } from "@/lib/auth";
@@ -34,6 +35,7 @@ export default async function ReportsPage({ params, searchParams }: {
   const dataset = selected?.dataset as ReportDataset | undefined;
   const campaignName = (id: string) => campaigns?.find((campaign) => campaign.id===id)?.name ?? "Campaign";
   const canManage = ["owner","manager"].includes(role);
+  const localMonth = DateTime.now().setZone(client.timezone).toFormat("yyyy-LL");
 
   return <Shell clientId={clientId} clientName={client.name}>
     <div className="page-heading"><div><div className="eyebrow">CLIENT WORKSPACE · REPORTS</div><h1>Monthly evidence snapshots</h1><p className="muted">Versioned comparisons captured from stored campaign observations.</p></div><Link className="button secondary" href={`/clients/${clientId}`}>Back to overview</Link></div>
@@ -45,7 +47,7 @@ export default async function ReportsPage({ params, searchParams }: {
     {canManage && <section className="panel"><div className="panel-heading"><div><h2>Freeze a new report version</h2><p className="muted small">The database calculates the two windows and saves the exact evidence IDs and SHA-256 checksum. Later corrections require another version.</p></div></div>
       {campaigns?.length ? <details className="add-detail"><summary>Prepare report snapshot</summary><form action={createReportSnapshot} className="form-grid"><input type="hidden" name="clientId" value={clientId} />
         <label>Campaign<select name="campaignId" required>{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.baseline_start} to {campaign.comparison_end}</option>)}</select></label>
-        <label>Report issue month<input name="reportMonth" type="month" required defaultValue={new Date().toISOString().slice(0,7)} /></label>
+        <label>Report issue month<input name="reportMonth" type="month" required defaultValue={localMonth} /></label>
         <label className="wide-field">Executive summary<textarea name="executiveSummary" required maxLength={5000} rows={4} placeholder="Describe observed changes and their limits; avoid causal claims." /></label>
         <label className="wide-field">Recommended next steps<textarea name="nextSteps" required maxLength={5000} rows={3} placeholder="Actions supported by the saved evidence." /></label>
         <label className="wide-field">Material limitations<textarea name="limitations" required maxLength={5000} rows={3} placeholder="Missing sources, unknown counters, changes in coverage, and other caveats." /></label>
