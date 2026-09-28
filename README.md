@@ -31,6 +31,9 @@ This checkout was created with Node 25.9, which produced an engine warning; buil
    ```
 
 5. Start the app: `npm run dev`. Open `http://localhost:3000`, sign in, and create two **fictional clients in the development project**.
+
+   On this Windows development machine, Node 25's automatic network-family selection caused Supabase Auth requests to reset while the endpoint itself remained healthy. If the login shows “Sign-in service is unavailable” again after restarting the server, start it from PowerShell with `$env:NODE_OPTIONS='--no-network-family-autoselection'; npm run dev`. This affects only that terminal's Node processes and does not change Supabase credentials. [Node CLI flag](https://nodejs.org/download/release/v24.20.0/docs/api/cli.html#--no-network-family-autoselection).
+
 6. Add a campaign for each client. Import a permitted CSV with observations in two periods, or record a real published contribution. For development-only acceptance, `tests/fixtures/synthetic-evidence.csv` contains explicitly synthetic observations; never present them as live Reddit data. The import form links to a blank CSV template and can assign rows with blank `campaign_id` cells to a selected campaign. Verify that unknown counters display as unknown and that a repeated import uses its existing batch ID.
 
 Use a custom SMTP provider before inviting real users: Supabase’s default SMTP service is for exploration and sends only to authorized team addresses with a low rate limit. [Supabase SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
