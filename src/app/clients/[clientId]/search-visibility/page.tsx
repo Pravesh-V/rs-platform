@@ -3,11 +3,17 @@ import { addSearchKeyword, addSearchObservation, createSearchSet, freezeSearchSe
 import { Shell } from "@/components/shell";
 import { requireClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
-import { summarizeSearchCohorts, type SearchObservation } from "@/lib/search-metrics";
+import { compareSearchWaves, summarizeSearchCohorts, type SearchCohort, type SearchObservation } from "@/lib/search-metrics";
+
+const rate = (cohort: SearchCohort | null) => cohort?.presenceRate === null || !cohort
+  ? "Withheld" : `${(cohort.presenceRate * 100).toFixed(1)}%`;
+const coverage = (cohort: SearchCohort | null) => cohort
+  ? `${cohort.attempted}/${cohort.planned} attempted · ${cohort.errors} errors · ${cohort.missing} missing`
+  : "No observations";
 
 export default async function SearchVisibilityPage({ params, searchParams }: {
   params: Promise<{ clientId: string }>;
-  searchParams: Promise<{ set?: string; observation?: string; error?: string }>;
+  searchParams: Promise<{ set?: string; observation?: string; error?: string; fromWave?: string; toWave?: string }>;
 }) {
   const { clientId } = await params;
   const filters = await searchParams;
@@ -31,6 +37,10 @@ export default async function SearchVisibilityPage({ params, searchParams }: {
   const loadError = setsError || keywordsError || observationsError;
   const cohorts = !loadError && !capped && keywords?.length && observations?.length
     ? summarizeSearchCohorts(keywords.map((row) => row.id),observations as SearchObservation[]) : [];
+  const waves = [...new Set(cohorts.map((cohort) => cohort.waveLabel))].sort();
+  const fromWave = waves.includes(filters.fromWave ?? "") ? filters.fromWave ?? "" : "";
+  const toWave = waves.includes(filters.toWave ?? "") ? filters.toWave ?? "" : "";
+  const changes = fromWave && toWave && fromWave !== toWave ? compareSearchWaves(cohorts,fromWave,toWave) : [];
 
   return <Shell clientId={clientId} clientName={client.name}>
     <div className="page-heading"><div><div className="eyebrow">SEARCH VISIBILITY · MANUAL EVIDENCE</div><h1>Keyword observations</h1><p className="muted">Track comparable search settings and observed result URLs for {client.name}.</p></div><Link className="button secondary" href={`/clients/${clientId}`}>Back to overview</Link></div>
@@ -61,6 +71,17 @@ export default async function SearchVisibilityPage({ params, searchParams }: {
       {cohorts.length ? <div className="table-scroll"><table><thead><tr><th>Wave</th><th>Result type</th><th>Source and method</th><th>Attempted</th><th>Present</th><th>Not found</th><th>Errors</th><th>Missing</th><th>Presence</th></tr></thead><tbody>{cohorts.map((cohort) => <tr key={JSON.stringify([cohort.waveLabel,cohort.sourceProvider,cohort.samplingMethod,cohort.resultType])}><td>{cohort.waveLabel}</td><td>{cohort.resultType.replaceAll("_"," ")}</td><td>{cohort.sourceProvider} · {cohort.samplingMethod.replaceAll("_"," ")}</td><td>{cohort.attempted}/{cohort.planned}</td><td>{cohort.present}</td><td>{cohort.notFound}</td><td>{cohort.errors}</td><td>{cohort.missing}</td><td>{cohort.presenceRate===null ? "Withheld" : `${(cohort.presenceRate*100).toFixed(1)}%`}</td></tr>)}</tbody></table></div>
         : <div className="empty compact">{capped ? "Coverage withheld until the full observation set can be loaded." : "Record observations to see coverage by cohort."}</div>}
       <p className="coverage-note">Presence is shown only when every keyword has a valid present or explicit not-found outcome. A missing record is not a not-found result. This is a sampled search observation, not audience exposure or a cross-provider trend.</p>
+    </section>}
+
+    {selectedSet?.status==="frozen" && <section className="panel"><div className="panel-heading"><div><h2>Compare two waves</h2><p className="muted small">Choose the earlier and later observations yourself. Comparisons use this frozen keyword set and match the same provider, collection method and result type.</p></div></div>
+      {waves.length >= 2 ? <form method="get" action={`/clients/${clientId}/search-visibility`} className="form-grid"><input type="hidden" name="set" value={selectedSet.id} />
+        <label>Earlier wave<select name="fromWave" required defaultValue={fromWave}><option value="">Choose a wave</option>{waves.map((wave) => <option value={wave} key={wave}>{wave}</option>)}</select></label>
+        <label>Later wave<select name="toWave" required defaultValue={toWave}><option value="">Choose a wave</option>{waves.map((wave) => <option value={wave} key={wave}>{wave}</option>)}</select></label>
+        <div className="form-actions"><button className="button secondary">Compare waves</button></div>
+      </form> : <div className="empty compact">Record at least two waves to compare them.</div>}
+      {filters.fromWave && filters.toWave && !changes.length && waves.length >= 2 && <div className="notice warning">Choose two different recorded waves from this set.</div>}
+      {changes.length > 0 && <div className="table-scroll"><table><thead><tr><th>Provider and method</th><th>Result type</th><th>Earlier coverage</th><th>Later coverage</th><th>Earlier presence</th><th>Later presence</th><th>Change</th></tr></thead><tbody>{changes.map((change) => <tr key={JSON.stringify([change.sourceProvider,change.samplingMethod,change.resultType])}><td>{change.sourceProvider} · {change.samplingMethod.replaceAll("_"," ")}</td><td>{change.resultType.replaceAll("_"," ")}</td><td>{coverage(change.baseline)}</td><td>{coverage(change.comparison)}</td><td>{rate(change.baseline)}</td><td>{rate(change.comparison)}</td><td>{change.presenceChangePoints === null ? "Withheld" : `${change.presenceChangePoints > 0 ? "+" : ""}${change.presenceChangePoints.toFixed(1)} pp`}</td></tr>)}</tbody></table></div>}
+      <p className="coverage-note">A change is shown only when both waves have one valid latest outcome for every keyword under identical sampling conditions. Percentage points describe sampled presence, not traffic, causation or a persistent ranking.</p>
     </section>}
 
     {selectedSet?.status==="frozen" && <>{canEdit && <section className="panel"><div className="panel-heading"><div><h2>Add one observed result</h2><p className="muted small">Record one result URL or an explicit not-found/error outcome for a keyword and wave.</p></div></div>

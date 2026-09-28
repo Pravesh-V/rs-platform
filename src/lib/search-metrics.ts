@@ -24,6 +24,14 @@ export type SearchCohort = {
   missing: number;
   presenceRate: number | null;
 };
+export type SearchWaveComparison = {
+  sourceProvider: string;
+  samplingMethod: string;
+  resultType: SearchResultType;
+  baseline: SearchCohort | null;
+  comparison: SearchCohort | null;
+  presenceChangePoints: number | null;
+};
 
 function key(row: SearchObservation): string {
   return JSON.stringify([row.wave_label,row.source_provider,row.sampling_method,row.result_type]);
@@ -56,4 +64,29 @@ export function summarizeSearchCohorts(keywordIds: string[], observations: Searc
       presenceRate: known.size>0 && missing===0 && errors===0 ? present/known.size : null };
   }).sort((a,b) => b.latestObservedAt.localeCompare(a.latestObservedAt)
     || a.waveLabel.localeCompare(b.waveLabel) || a.resultType.localeCompare(b.resultType));
+}
+
+export function compareSearchWaves(cohorts: SearchCohort[], baselineWave: string, comparisonWave: string): SearchWaveComparison[] {
+  if (!baselineWave || !comparisonWave || baselineWave === comparisonWave) return [];
+  const scopes = new Map<string, { baseline: SearchCohort | null; comparison: SearchCohort | null }>();
+  for (const cohort of cohorts) {
+    if (cohort.waveLabel !== baselineWave && cohort.waveLabel !== comparisonWave) continue;
+    const scope = JSON.stringify([cohort.sourceProvider, cohort.samplingMethod, cohort.resultType]);
+    const pair = scopes.get(scope) ?? { baseline: null, comparison: null };
+    if (cohort.waveLabel === baselineWave) pair.baseline = cohort;
+    else pair.comparison = cohort;
+    scopes.set(scope, pair);
+  }
+  return [...scopes.entries()].map(([scope, pair]) => {
+    const [sourceProvider, samplingMethod, resultType] = JSON.parse(scope) as [string, string, SearchResultType];
+    const { baseline, comparison } = pair;
+    return {
+      sourceProvider, samplingMethod, resultType, baseline, comparison,
+      presenceChangePoints: baseline?.presenceRate !== null && baseline?.presenceRate !== undefined
+        && comparison?.presenceRate !== null && comparison?.presenceRate !== undefined
+        && baseline.planned === comparison.planned
+        ? (comparison.presenceRate - baseline.presenceRate) * 100 : null,
+    };
+  }).sort((a, b) => a.sourceProvider.localeCompare(b.sourceProvider)
+    || a.samplingMethod.localeCompare(b.samplingMethod) || a.resultType.localeCompare(b.resultType));
 }
