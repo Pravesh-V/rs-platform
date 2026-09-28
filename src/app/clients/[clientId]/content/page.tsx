@@ -2,6 +2,8 @@ import Link from "next/link";
 import { z } from "zod";
 import { createDraft, reviseDraft, reviewDraft } from "@/app/actions/content";
 import { cancelDraftPlan, scheduleApprovedDraft } from "@/app/actions/calendar";
+import { recordContribution } from "@/app/actions/records";
+import { ApprovedCopy } from "@/components/approved-copy";
 import { Shell } from "@/components/shell";
 import { requireClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
@@ -57,6 +59,17 @@ export default async function Content({ params, searchParams }: {
 
     <section className="panel"><div className="panel-heading"><div><h2>{selected?.current_title ?? "Selected draft"}</h2><p className="muted small">{selected ? `Version ${selected.current_version} · ${selected.status.replaceAll("_", " ")}` : "Select a draft to review it."}</p></div>{selected && <span className="pill">{selected.status.replaceAll("_", " ")}</span>}</div>
       {selected ? <div className="draft-detail"><p className="draft-body">{selected.current_body}</p><p className="muted small">Source: {selected.current_source_note}</p><p className="muted small">Created {new Date(selected.created_at).toLocaleString("en")} · Updated {new Date(selected.updated_at).toLocaleString("en")}{selected.approved_at ? ` · Approved ${new Date(selected.approved_at).toLocaleString("en")}` : ""}</p>
+        {canEdit && selected.status === "approved" && <div className="review-detail"><h3>Ready for manual publication</h3><p className="muted small">Copy this approved version only after checking the current conversation, claims, and community rules. Copying does not publish it.</p><ApprovedCopy key={`${selected.id}:${selected.current_version}`} body={selected.current_body} version={selected.current_version} />
+          <details className="review-detail"><summary>Record the publication after posting</summary><form action={recordContribution} className="stack"><input type="hidden" name="clientId" value={clientId} />
+            <label>Actual Reddit URL<input name="url" type="url" required placeholder="https://www.reddit.com/r/.../comments/..." /></label>
+            <label>Title or description<input name="title" maxLength={500} placeholder="What was actually published" /></label>
+            <label>Campaign<select name="campaignId" defaultValue={selected.campaign_id ?? ""}><option value="">No campaign</option>{selected.campaign_id && !campaigns?.some((campaign) => campaign.id === selected.campaign_id) && <option value={selected.campaign_id}>Draft&apos;s assigned campaign</option>}{campaigns?.map((campaign) => <option value={campaign.id} key={campaign.id}>{campaign.name}</option>)}</select></label>
+            <label>Format<select name="format"><option value="post">Post</option><option value="comment">Comment</option><option value="faq">FAQ</option><option value="tutorial">Tutorial</option><option value="comparison">Comparison</option><option value="other">Other</option></select></label>
+            <label>Publication time with timezone offset<input name="publishedAt" required placeholder="2026-09-28T12:30:00+05:30" /></label>
+            <button className="button primary">Record published URL</button>
+            <p className="muted small">This records a user-reported URL against the client and selected campaign. It does not verify the post or prove that this exact draft version was used.</p>
+          </form></details>
+        </div>}
         {canEdit && <details className="review-detail"><summary>Write a new version</summary><form action={reviseDraft} className="stack"><input type="hidden" name="clientId" value={clientId} /><input type="hidden" name="draftId" value={selected.id} /><input type="hidden" name="expectedVersion" value={selected.current_version} />
           <label>Title<input name="title" required maxLength={500} defaultValue={selected.current_title} /></label>
           <label>Body<textarea name="body" required maxLength={20000} rows={8} defaultValue={selected.current_body} /></label>
