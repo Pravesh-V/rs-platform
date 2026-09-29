@@ -28,6 +28,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927001000_manual
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927001100_manual_analytics.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927001200_content_calendar.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260929000100_client_viewer_reports.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260929000200_client_report_sharing.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -391,16 +392,31 @@ await db.query('insert into public.memberships(organization_id,user_id,role) val
 await db.query('insert into public.client_access(client_id,organization_id,user_id,role) values ($1,$2,$3,$4)',[a,org,viewer,'client_viewer']);
 await db.exec(`set role authenticated; set request.jwt.claim.sub = '${owner}'`);
 assert.equal((await db.query(reportSql,[draftReportId,a,campaign,'2026-10-01','Unapproved draft','Do not share yet','Synthetic fixture'])).rows[0].id,draftReportId);
+const shareReportSql = 'select public.set_report_client_sharing($1,$2,$3) as id';
+await assert.rejects(db.query(shareReportSql,[a,draftReportId,true]));
 await db.exec(`set request.jwt.claim.sub = '${viewer}'`);
 assert.deepEqual((await db.query('select name from public.clients order by name')).rows.map((row) => row.name),['A']);
-assert.deepEqual((await db.query('select id,status from public.report_snapshots order by version')).rows.map((row) => row.id),[reportId]);
+assert.equal((await db.query('select count(*)::int as count from public.report_snapshots')).rows[0].count,0,'internal approval alone must not share a report');
 for (const table of ['campaigns','client_facts','reddit_items','metric_snapshots','content_drafts','community_research','analytics_observations']) {
   assert.equal((await db.query(`select count(*)::int as count from public.${table} where client_id=$1`,[a])).rows[0].count,0,`${table} must stay private from client viewers`);
 }
 await assert.rejects(db.query(reportSql,['41414141-4141-4141-8141-414141414141',a,campaign,'2026-10-01','Denied','Denied','Denied']));
 await assert.rejects(db.query(approveReportSql,[a,draftReportId,'Denied']));
+await assert.rejects(db.query(shareReportSql,[a,reportId,true]));
 assert.equal((await db.query('select count(*)::int as count from public.report_snapshots where client_id=$1',[b])).rows[0].count,0);
 await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+assert.equal((await db.query(shareReportSql,[a,reportId,true])).rows[0].id,reportId);
+assert.equal((await db.query(shareReportSql,[a,reportId,true])).rows[0].id,reportId);
+await assert.rejects(db.query(shareReportSql,[b,reportId,true]));
+await db.exec(`set request.jwt.claim.sub = '${viewer}'`);
+assert.deepEqual((await db.query('select id from public.report_snapshots')).rows.map((row) => row.id),[reportId]);
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+assert.equal((await db.query(shareReportSql,[a,reportId,false])).rows[0].id,reportId);
+await db.exec(`set request.jwt.claim.sub = '${viewer}'`);
+assert.equal((await db.query('select count(*)::int as count from public.report_snapshots')).rows[0].count,0);
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+assert.equal((await db.query("select count(*)::int as count from public.audit_events where record_id=$1 and event_type in ('report_shared_with_client','report_unshared_from_client')",[reportId])).rows[0].count,2);
+assert.equal((await db.query('select has_function_privilege($1,$2,$3) as allowed',['anon','public.set_report_client_sharing(uuid,uuid,boolean)','EXECUTE'])).rows[0].allowed,false);
 console.log('RPC access, two-period evidence, idempotency and conflict checks passed.');
 const saved = await db.dumpDataDir();
 await db.close();

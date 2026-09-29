@@ -49,3 +49,18 @@ export async function approveReportSnapshot(form: FormData) {
   revalidatePath(path(clientId));
   redirect(`${path(clientId)}?report=${parsed.data.reportId}`);
 }
+
+export async function setReportClientSharing(form: FormData) {
+  const clientId = String(form.get("clientId") ?? "");
+  const parsed = z.object({ clientId: uuid, reportId: uuid, shared: z.enum(["true","false"]) })
+    .safeParse({ clientId, reportId: form.get("reportId"), shared: form.get("shared") });
+  if (!parsed.success) redirect(errorPath(clientId,"Invalid report sharing request."));
+  const { db, role } = await requireClient(clientId);
+  if (!["owner","manager"].includes(role)) redirect(errorPath(clientId,"Report sharing access required."));
+  const { error } = await retryIdempotentRequest(async () => db.rpc("set_report_client_sharing", {
+    p_client_id: clientId, p_report_id: parsed.data.reportId, p_shared: parsed.data.shared === "true",
+  }));
+  if (error) redirect(errorPath(clientId,error.message));
+  revalidatePath(path(clientId));
+  redirect(`${path(clientId)}?report=${parsed.data.reportId}`);
+}

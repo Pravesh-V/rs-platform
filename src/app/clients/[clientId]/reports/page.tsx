@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { DateTime } from "luxon";
-import { approveReportSnapshot, createReportSnapshot } from "@/app/actions/reports";
+import { approveReportSnapshot, createReportSnapshot, setReportClientSharing } from "@/app/actions/reports";
 import { Shell } from "@/components/shell";
 import { requireClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
@@ -24,7 +24,7 @@ export default async function ReportsPage({ params, searchParams }: {
   const { db, client, role } = await requireClient(clientId);
   const [{ data: reports, count: reportCount, error: reportsError }, { data: campaigns, error: campaignsError }] = await Promise.all([
     retryIdempotentRequest(async () => db.from("report_snapshots")
-      .select("id,campaign_id,report_month,version,status,calculation_version,dataset,dataset_sha256,executive_summary,next_steps,limitations,created_at,approved_at,approval_note",{count:"exact"})
+      .select("id,campaign_id,report_month,version,status,calculation_version,dataset,dataset_sha256,executive_summary,next_steps,limitations,created_at,approved_at,approval_note,shared_with_client_at",{count:"exact"})
       .eq("client_id",clientId).order("created_at",{ascending:false}).limit(100)),
     role === "client_viewer"
       ? Promise.resolve({ data: [], error: null })
@@ -58,7 +58,7 @@ export default async function ReportsPage({ params, searchParams }: {
     </section>}
 
     <div className="content-columns"><section className="panel"><div className="panel-heading"><div><h2>Saved versions</h2><p className="muted small">Newest 100, newest version first for each issue month.</p></div></div>
-      {visibleReports.length ? <div className="record-list content-list">{visibleReports.map((report) => <Link key={report.id} className={`draft-row${selected?.id===report.id ? " selected" : ""}`} href={`?report=${report.id}`}><strong>{campaignName(report.campaign_id)} · {report.report_month.slice(0,7)} · v{report.version}</strong><span className="tag">{report.status}</span><span className="muted small">Created {new Date(report.created_at).toLocaleString("en")}</span></Link>)}</div> : reportsError ? <div className="empty compact">Reports unavailable.</div> : <div className="empty compact">{role === "client_viewer" ? "No approved reports yet." : "No report snapshots yet."}</div>}
+      {visibleReports.length ? <div className="record-list content-list">{visibleReports.map((report) => <Link key={report.id} className={`draft-row${selected?.id===report.id ? " selected" : ""}`} href={`?report=${report.id}`}><strong>{campaignName(report.campaign_id)} · {report.report_month.slice(0,7)} · v{report.version}</strong><span className="tag">{report.status}</span>{report.shared_with_client_at && <span className="tag">Shared with client</span>}<span className="muted small">Created {new Date(report.created_at).toLocaleString("en")}</span></Link>)}</div> : reportsError ? <div className="empty compact">Reports unavailable.</div> : <div className="empty compact">{role === "client_viewer" ? "No shared reports yet." : "No report snapshots yet."}</div>}
     </section><section className="panel"><div className="panel-heading"><div><h2>{selected ? `${campaignName(selected.campaign_id)} · ${selected.report_month.slice(0,7)} · v${selected.version}` : "Selected report"}</h2><p className="muted small">{selected ? `${selected.status} · ${selected.calculation_version}` : "Select or create a report."}</p></div>
       {selected && <div className="filter-row"><Link className="button secondary" href={`/clients/${clientId}/reports/${selected.id}/download`}>Evidence JSON</Link>{selected.status === "approved" && <Link className="button primary" href={`/clients/${clientId}/reports/${selected.id}/pdf`}>Download PDF</Link>}</div>}</div>
       {selected && dataset && <div className="draft-detail">
@@ -72,6 +72,9 @@ export default async function ReportsPage({ params, searchParams }: {
         <p className="muted small">Dataset SHA-256: <code>{selected.dataset_sha256}</code></p>
         {selected.status==="approved" ? <p className="notice">Approved {selected.approved_at ? new Date(selected.approved_at).toLocaleString("en") : ""}. {selected.approval_note}</p>
           : canManage && <details className="review-detail"><summary>Approve this frozen version</summary><p className="muted small">Compare the saved numbers and source IDs with the underlying records. Approval does not publish or share the report.</p><form action={approveReportSnapshot} className="stack"><input type="hidden" name="clientId" value={clientId} /><input type="hidden" name="reportId" value={selected.id} /><label>Approval note<textarea name="note" required maxLength={2000} rows={3} placeholder="What you checked and remaining uncertainty" /></label><button className="button primary">Approve internal report</button></form></details>}
+        {selected.status==="approved" && canManage && <div className="notice"><p>{selected.shared_with_client_at ? `Shared with assigned client viewers since ${new Date(selected.shared_with_client_at).toLocaleString("en")}.` : "Private to the agency. Approval alone does not share this report."}</p>
+          <form action={setReportClientSharing}><input type="hidden" name="clientId" value={clientId} /><input type="hidden" name="reportId" value={selected.id} /><input type="hidden" name="shared" value={selected.shared_with_client_at ? "false" : "true"} /><button className="button secondary">{selected.shared_with_client_at ? "Stop client sharing" : "Share approved report with client"}</button></form>
+        </div>}
       </div>}
     </section></div>
   </Shell>;
