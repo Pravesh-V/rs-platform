@@ -3,7 +3,7 @@ import { z } from "zod";
 import { addCampaignEvent, reviseCampaign } from "@/app/actions/campaigns";
 import { Shell } from "@/components/shell";
 import { UtmBuilder } from "@/components/utm-builder";
-import { requireClient } from "@/lib/auth";
+import { requireInternalClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 
 export default async function CampaignPlanning({ params, searchParams }: {
@@ -12,7 +12,7 @@ export default async function CampaignPlanning({ params, searchParams }: {
 }) {
   const { clientId } = await params;
   const { error: actionError, campaign: requestedCampaign } = await searchParams;
-  const { db, client, role } = await requireClient(clientId);
+  const { db, client, role } = await requireInternalClient(clientId);
   const { data: campaigns, error: campaignsError } = await retryIdempotentRequest(async () =>
     db.from("campaigns").select("id,name,goal,baseline_start,baseline_end,comparison_start,comparison_end,current_version").eq("client_id", clientId).order("created_at", { ascending: false }).limit(100));
   const selected = campaigns?.find((item) => item.id === requestedCampaign) ?? campaigns?.[0];

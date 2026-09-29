@@ -27,6 +27,7 @@ await db.exec(readFileSync(new URL('../supabase/migrations/20260927000900_report
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927001000_manual_search_visibility.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927001100_manual_analytics.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../supabase/migrations/20260927001200_content_calendar.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/20260929000100_client_viewer_reports.sql', import.meta.url), 'utf8'));
 console.log('Migration executed in PGlite.');
 const org = '11111111-1111-4111-8111-111111111111';
 const owner = '22222222-2222-4222-8222-222222222222';
@@ -381,6 +382,24 @@ await db.query(analyticsSql,[privateAnalytics,org,b,null,...analyticsArgs.slice(
 await db.exec(`set request.jwt.claim.sub = '${researcher}'`);
 assert.equal((await db.query('select count(*)::int as count from public.analytics_observations where client_id=$1',[b])).rows[0].count,0);
 assert.equal((await db.query('select has_table_privilege($1,$2,$3) as allowed',['anon','public.analytics_observations','SELECT'])).rows[0].allowed,false);
+await db.exec(`set request.jwt.claim.sub = '${owner}'`);
+const viewer = '39393939-3939-4393-8393-393939393939';
+const draftReportId = '40404040-4040-4040-8040-404040404040';
+await db.exec('reset role');
+await db.query('insert into auth.users(id) values ($1)',[viewer]);
+await db.query('insert into public.memberships(organization_id,user_id,role) values ($1,$2,$3)',[org,viewer,'client_viewer']);
+await db.query('insert into public.client_access(client_id,organization_id,user_id,role) values ($1,$2,$3,$4)',[a,org,viewer,'client_viewer']);
+await db.exec(`set role authenticated; set request.jwt.claim.sub = '${owner}'`);
+assert.equal((await db.query(reportSql,[draftReportId,a,campaign,'2026-10-01','Unapproved draft','Do not share yet','Synthetic fixture'])).rows[0].id,draftReportId);
+await db.exec(`set request.jwt.claim.sub = '${viewer}'`);
+assert.deepEqual((await db.query('select name from public.clients order by name')).rows.map((row) => row.name),['A']);
+assert.deepEqual((await db.query('select id,status from public.report_snapshots order by version')).rows.map((row) => row.id),[reportId]);
+for (const table of ['campaigns','client_facts','reddit_items','metric_snapshots','content_drafts','community_research','analytics_observations']) {
+  assert.equal((await db.query(`select count(*)::int as count from public.${table} where client_id=$1`,[a])).rows[0].count,0,`${table} must stay private from client viewers`);
+}
+await assert.rejects(db.query(reportSql,['41414141-4141-4141-8141-414141414141',a,campaign,'2026-10-01','Denied','Denied','Denied']));
+await assert.rejects(db.query(approveReportSql,[a,draftReportId,'Denied']));
+assert.equal((await db.query('select count(*)::int as count from public.report_snapshots where client_id=$1',[b])).rows[0].count,0);
 await db.exec(`set request.jwt.claim.sub = '${owner}'`);
 console.log('RPC access, two-period evidence, idempotency and conflict checks passed.');
 const saved = await db.dumpDataDir();

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { recordAnalyticsObservation } from "@/app/actions/analytics";
 import { Shell } from "@/components/shell";
-import { requireClient } from "@/lib/auth";
+import { requireInternalClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 
 export default async function AnalyticsPage({ params, searchParams }: {
@@ -10,7 +10,7 @@ export default async function AnalyticsPage({ params, searchParams }: {
 }) {
   const { clientId } = await params;
   const filters = await searchParams;
-  const { db, client, role } = await requireClient(clientId);
+  const { db, client, role } = await requireInternalClient(clientId);
   const [{ data: observations, count, error }, { data: campaigns, error: campaignsError }] = await Promise.all([
     retryIdempotentRequest(async () => db.from("analytics_observations")
       .select("id,campaign_id,supersedes_id,source_kind,property_reference,property_timezone,period_start,period_end,dimension_scope,source_name,medium,campaign_tag,content_tag,metric_name,event_name,metric_value,currency,attribution_note,source_note,created_at",{count:"exact"})

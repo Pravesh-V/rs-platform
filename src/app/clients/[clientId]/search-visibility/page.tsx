@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { addSearchKeyword, addSearchObservation, createSearchSet, freezeSearchSet } from "@/app/actions/search-visibility";
 import { Shell } from "@/components/shell";
-import { requireClient } from "@/lib/auth";
+import { requireInternalClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 import { compareSearchWaves, summarizeSearchCohorts, type SearchCohort, type SearchObservation } from "@/lib/search-metrics";
 
@@ -17,7 +17,7 @@ export default async function SearchVisibilityPage({ params, searchParams }: {
 }) {
   const { clientId } = await params;
   const filters = await searchParams;
-  const { db, client, role } = await requireClient(clientId);
+  const { db, client, role } = await requireInternalClient(clientId);
   const { data: sets, count: setCount, error: setsError } = await retryIdempotentRequest(async () => db.from("search_sets")
     .select("id,name,version,engine,region,language,device,status,created_at",{count:"exact"}).eq("client_id",clientId)
     .order("created_at",{ascending:false}).limit(100));

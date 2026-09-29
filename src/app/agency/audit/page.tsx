@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Shell } from "@/components/shell";
 import { requireUser } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
@@ -14,6 +15,7 @@ export default async function AgencyAudit({ searchParams }: { searchParams: Prom
   const { data: memberships, error: membershipError } = await retryIdempotentRequest(async () => db.from("memberships")
     .select("organization_id,role").eq("user_id",userId).eq("role","owner"));
   const ownerOrgIds = memberships?.map((membership) => membership.organization_id) ?? [];
+  if (!membershipError && ownerOrgIds.length === 0) redirect("/clients");
   const selectedOrgId = ownerOrgIds.includes(filters.organization ?? "") ? filters.organization! : ownerOrgIds[0];
   const [{ data: organizations, error: orgError }, { data: clients, error: clientsError }, { data: events, count: eventCount, error: eventsError }] = selectedOrgId ? await Promise.all([
     retryIdempotentRequest(async () => db.from("organizations").select("id,name").in("id",ownerOrgIds).order("name")),

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { addCommunity, addOpportunity, setOpportunityStatus } from "@/app/actions/research";
 import { Shell } from "@/components/shell";
-import { requireClient } from "@/lib/auth";
+import { requireInternalClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 
 const statuses = ["new","reviewed","assigned","drafted","dismissed"];
@@ -12,7 +12,7 @@ export default async function Research({ params, searchParams }: {
 }) {
   const { clientId } = await params;
   const { error: actionError } = await searchParams;
-  const { db, client, role } = await requireClient(clientId);
+  const { db, client, role } = await requireInternalClient(clientId);
   const [{ data: communities, error: communitiesError }, { data: opportunities, error: opportunitiesError }] = await Promise.all([
     retryIdempotentRequest(async () => db.from("community_research").select("id,subreddit,relevance_note,activity_note,rules_url,rules_summary,rules_checked_at,promotion_policy,source_note,created_at").eq("client_id",clientId).order("created_at",{ ascending:false }).limit(100)),
     retryIdempotentRequest(async () => db.from("opportunities").select("id,external_id,canonical_url,subreddit,title,context_note,suggested_angle,priority,priority_reason,status,source_note,observed_at").eq("client_id",clientId).order("created_at",{ ascending:false }).limit(100)),

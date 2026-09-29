@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { addPrompt, createPromptSet, freezePromptSet, recordManualAnswer, reviewManualAnswer } from "@/app/actions/ai-visibility";
 import { Shell } from "@/components/shell";
-import { requireClient } from "@/lib/auth";
+import { requireInternalClient } from "@/lib/auth";
 import { summarizeAnswerCohort } from "@/lib/ai-visibility";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 
@@ -21,7 +21,7 @@ export default async function AiVisibility({ params, searchParams }: {
 }) {
   const { clientId } = await params;
   const filters = await searchParams;
-  const { db, client, role } = await requireClient(clientId);
+  const { db, client, role } = await requireInternalClient(clientId);
   const { data: sets, count: setCount, error: setsError } = await retryIdempotentRequest(async () => db.from("ai_prompt_sets")
     .select("id,name,version,language,region,planned_repeats,status,frozen_at,created_at",{count:"exact"})
     .eq("client_id", clientId).order("created_at", { ascending: false }).limit(100));

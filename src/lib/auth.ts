@@ -21,3 +21,9 @@ export async function requireClient(clientId: string) {
   if (membershipError || accessError) throw new Error("Could not verify client access. Please refresh this page.");
   return { db, client, userId, role: membership?.role === "owner" ? "owner" : access?.role ?? "none" };
 }
+
+export async function requireInternalClient(clientId: string) {
+  const context = await requireClient(clientId);
+  if (context.role === "client_viewer") redirect(`/clients/${clientId}/reports`);
+  return context;
+}

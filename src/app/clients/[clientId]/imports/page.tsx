@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { ImportPanel } from "@/components/import-panel";
 import { Shell } from "@/components/shell";
-import { requireClient } from "@/lib/auth";
+import { requireInternalClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 
 export default async function Imports({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
-  const { db, client, role } = await requireClient(clientId);
+  const { db, client, role } = await requireInternalClient(clientId);
   const [{ data: batches, error }, { data: campaigns, error: campaignsError }] = await Promise.all([
     retryIdempotentRequest(async () => db.from("import_batches").select("id,file_name,source_note,row_count,created_at").eq("client_id",clientId).order("created_at",{ ascending:false }).limit(20)),
     retryIdempotentRequest(async () => db.from("campaigns").select("id,name").eq("client_id",clientId).order("created_at",{ ascending:false })),

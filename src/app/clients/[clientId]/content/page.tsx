@@ -5,7 +5,7 @@ import { cancelDraftPlan, scheduleApprovedDraft } from "@/app/actions/calendar";
 import { recordContribution } from "@/app/actions/records";
 import { ApprovedCopy } from "@/components/approved-copy";
 import { Shell } from "@/components/shell";
-import { requireClient } from "@/lib/auth";
+import { requireInternalClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 
 export default async function Content({ params, searchParams }: {
@@ -14,7 +14,7 @@ export default async function Content({ params, searchParams }: {
 }) {
   const { clientId } = await params;
   const { error: actionError, draft: requestedDraft } = await searchParams;
-  const { db, client, role } = await requireClient(clientId);
+  const { db, client, role } = await requireInternalClient(clientId);
   const [{ data: drafts, error: draftsError }, { data: campaigns, error: campaignsError }, { data: opportunities, error: opportunitiesError },
     { data: plans, count: planCount, error: plansError }] = await Promise.all([
     retryIdempotentRequest(async () => db.from("content_drafts").select("id,current_title,current_version,status,updated_at").eq("client_id", clientId).order("updated_at", { ascending: false }).limit(100)),

@@ -26,8 +26,10 @@ export default async function ReportsPage({ params, searchParams }: {
     retryIdempotentRequest(async () => db.from("report_snapshots")
       .select("id,campaign_id,report_month,version,status,calculation_version,dataset,dataset_sha256,executive_summary,next_steps,limitations,created_at,approved_at,approval_note",{count:"exact"})
       .eq("client_id",clientId).order("created_at",{ascending:false}).limit(100)),
-    retryIdempotentRequest(async () => db.from("campaigns").select("id,name,baseline_start,baseline_end,comparison_start,comparison_end")
-      .eq("client_id",clientId).order("created_at",{ascending:false}).limit(100)),
+    role === "client_viewer"
+      ? Promise.resolve({ data: [], error: null })
+      : retryIdempotentRequest(async () => db.from("campaigns").select("id,name,baseline_start,baseline_end,comparison_start,comparison_end")
+        .eq("client_id",clientId).order("created_at",{ascending:false}).limit(100)),
   ]);
   const capped = reportCount !== null && reportCount > (reports?.length ?? 0);
   const visibleReports = reports ?? [];
@@ -37,9 +39,9 @@ export default async function ReportsPage({ params, searchParams }: {
   const canManage = ["owner","manager"].includes(role);
   const localMonth = DateTime.now().setZone(client.timezone).toFormat("yyyy-LL");
 
-  return <Shell clientId={clientId} clientName={client.name}>
-    <div className="page-heading"><div><div className="eyebrow">CLIENT WORKSPACE · REPORTS</div><h1>Monthly evidence snapshots</h1><p className="muted">Versioned comparisons captured from stored campaign observations.</p></div><Link className="button secondary" href={`/clients/${clientId}`}>Back to overview</Link></div>
-    <div className="notice warning"><strong>Internal evidence report, not an attribution claim.</strong><p>Only manually stored, campaign-linked Reddit observations are included. Missing views remain unknown. Analytics, search, competitor and provider AI data are disconnected. An approved version can be downloaded as a branded PDF.</p></div>
+  return <Shell clientId={clientId} clientName={client.name} viewerMode={role === "client_viewer"}>
+    <div className="page-heading"><div><div className="eyebrow">{role === "client_viewer" ? "APPROVED REPORTS" : "CLIENT WORKSPACE · REPORTS"}</div><h1>Monthly evidence snapshots</h1><p className="muted">Versioned comparisons captured from stored campaign observations.</p></div><Link className="button secondary" href="/clients">Back to clients</Link></div>
+    <div className="notice warning"><strong>Evidence report, not an attribution claim.</strong><p>Only manually stored, campaign-linked Reddit observations are included. Missing views remain unknown. Analytics, search, competitor and provider AI data are disconnected. An approved version can be downloaded as a branded PDF.</p></div>
     {filters.error && <div className="notice error" role="alert">{filters.error}</div>}
     {(reportsError || campaignsError) && <div className="notice error" role="alert">Reports could not fully load. {reportsError?.message ?? campaignsError?.message}</div>}
     {capped && <div className="notice warning">Showing the newest 100 reports. Older report pagination is still needed.</div>}
@@ -56,7 +58,7 @@ export default async function ReportsPage({ params, searchParams }: {
     </section>}
 
     <div className="content-columns"><section className="panel"><div className="panel-heading"><div><h2>Saved versions</h2><p className="muted small">Newest 100, newest version first for each issue month.</p></div></div>
-      {visibleReports.length ? <div className="record-list content-list">{visibleReports.map((report) => <Link key={report.id} className={`draft-row${selected?.id===report.id ? " selected" : ""}`} href={`?report=${report.id}`}><strong>{campaignName(report.campaign_id)} · {report.report_month.slice(0,7)} · v{report.version}</strong><span className="tag">{report.status}</span><span className="muted small">Created {new Date(report.created_at).toLocaleString("en")}</span></Link>)}</div> : reportsError ? <div className="empty compact">Reports unavailable.</div> : <div className="empty compact">No report snapshots yet.</div>}
+      {visibleReports.length ? <div className="record-list content-list">{visibleReports.map((report) => <Link key={report.id} className={`draft-row${selected?.id===report.id ? " selected" : ""}`} href={`?report=${report.id}`}><strong>{campaignName(report.campaign_id)} · {report.report_month.slice(0,7)} · v{report.version}</strong><span className="tag">{report.status}</span><span className="muted small">Created {new Date(report.created_at).toLocaleString("en")}</span></Link>)}</div> : reportsError ? <div className="empty compact">Reports unavailable.</div> : <div className="empty compact">{role === "client_viewer" ? "No approved reports yet." : "No report snapshots yet."}</div>}
     </section><section className="panel"><div className="panel-heading"><div><h2>{selected ? `${campaignName(selected.campaign_id)} · ${selected.report_month.slice(0,7)} · v${selected.version}` : "Selected report"}</h2><p className="muted small">{selected ? `${selected.status} · ${selected.calculation_version}` : "Select or create a report."}</p></div>
       {selected && <div className="filter-row"><Link className="button secondary" href={`/clients/${clientId}/reports/${selected.id}/download`}>Evidence JSON</Link>{selected.status === "approved" && <Link className="button primary" href={`/clients/${clientId}/reports/${selected.id}/pdf`}>Download PDF</Link>}</div>}</div>
       {selected && dataset && <div className="draft-detail">

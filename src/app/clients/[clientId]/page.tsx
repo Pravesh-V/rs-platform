@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createCampaign, createFact, recordContribution, reviewFact } from "@/app/actions/records";
 import { Shell } from "@/components/shell";
-import { requireClient } from "@/lib/auth";
+import { requireInternalClient } from "@/lib/auth";
 import { evidence, periodBounds } from "@/lib/data";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 import { contributionGroups, matchedViewChange, summarize } from "@/lib/metrics";
@@ -11,7 +11,7 @@ function timestamp(value: string | null) { return value ? new Date(value).toLoca
 
 export default async function ClientOverview({ params, searchParams }: { params: Promise<{ clientId: string }>; searchParams: Promise<{ campaign?: string; error?: string }> }) {
   const { clientId } = await params;
-  const { db, client, role } = await requireClient(clientId);
+  const { db, client, role } = await requireInternalClient(clientId);
   const filters = await searchParams;
   const [{ data: facts, error: factsError }, { data: campaigns, error: campaignsError }, { data: contributions, count: contributionCount, error: contributionError }] = await Promise.all([
     retryIdempotentRequest(async () => db.from("client_facts").select("id,kind,statement,source_url,review_status,verified_at,review_note,reviewed_at").eq("client_id",clientId).order("created_at",{ ascending:false }).limit(100)),

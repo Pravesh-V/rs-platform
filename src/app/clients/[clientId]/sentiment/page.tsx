@@ -2,7 +2,7 @@ import Link from "next/link";
 import { z } from "zod";
 import { reviewSentiment } from "@/app/actions/sentiment";
 import { Shell } from "@/components/shell";
-import { requireClient } from "@/lib/auth";
+import { requireInternalClient } from "@/lib/auth";
 import { retryIdempotentRequest } from "@/lib/idempotent-insert";
 import { summarizeIndependentSentiment } from "@/lib/sentiment";
 
@@ -14,7 +14,7 @@ export default async function Sentiment({ params, searchParams }: {
 }) {
   const { clientId } = await params;
   const { item: requestedItem, error: actionError } = await searchParams;
-  const { db, client, role } = await requireClient(clientId);
+  const { db, client, role } = await requireInternalClient(clientId);
   const { data: items, error: itemsError } = await retryIdempotentRequest(async () => db.from("reddit_items")
     .select("id,external_id,canonical_url,subreddit,item_type,affiliation").eq("client_id", clientId)
     .order("created_at", { ascending: false }).limit(100));
